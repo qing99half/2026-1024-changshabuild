@@ -1,3 +1,5 @@
+import { turnTone } from './melody.mjs';
+
 export const STEP = 1 / 60;
 export const ENEMY_TRAIL_LIFE = 0.62;
 // The Unity camera has a 3.84 world-unit orthographic half-height; 16:9 gives this field.
@@ -225,7 +227,11 @@ function stepTutorial(game) {
 export function turn(game) {
   if (game.status !== 'playing' && game.status !== 'tutorial') return false;
   game.player.dir = (game.player.dir + (game.player.clockwise ? 1 : 3)) % 4;
-  emit(game, 'turn', '', { x: game.player.x, y: game.player.y });
+  const tone = turnTone(game.player.y, game.player.dir);
+  emit(game, 'turn', '', {
+    x: game.player.x, y: game.player.y, dir: game.player.dir,
+    toneId: tone.id, toneBand: tone.band
+  });
   if (game.status === 'tutorial') {
     game.tutorial.turns++;
     if (game.tutorial.stage === 0 && game.tutorial.turns >= 2) advanceTutorial(game);

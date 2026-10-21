@@ -1,5 +1,5 @@
 import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
-import { preloadAudio, playAudioEvent, startMusic, pauseMusic, setMusicPitch } from './audio.mjs';
+import { preloadAudio, playAudioEvent, startMusic, pauseMusic, setMusicPitch, setMelodicMode } from './audio.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -28,6 +28,9 @@ try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { /*
 const game = createGame({ ...saved, classicSpawns: new URLSearchParams(location.search).get('mode') === 'original' });
 let reducedMotion = false;
 try { reducedMotion = localStorage.getItem('righty-reduced-motion') === 'true'; } catch { /* Local settings are optional. */ }
+let melodicAudio = true;
+try { melodicAudio = localStorage.getItem('righty-melodic-audio') !== 'false'; } catch { /* Local settings are optional. */ }
+setMelodicMode(melodicAudio);
 let previousTime = 0;
 let accumulator = 0;
 let visualTime = 0;
@@ -45,7 +48,7 @@ function save() {
 
 function consumeEvents() {
   for (const event of game.events.splice(0)) {
-    playAudioEvent(event.kind);
+    playAudioEvent(event.kind, event);
     visualEvent(event);
     if (event.kind === 'results' || event.kind === 'unlock' || event.kind === 'tutorial-complete') save();
     if (event.kind === 'tutorial-stage' || event.kind === 'tutorial-retry') syncUI();
@@ -182,6 +185,7 @@ function syncUI() {
   $('skin-buy').textContent = game.totalPoints >= cost ? `解锁 · ${cost} 点` : `还差 ${cost - game.totalPoints} 点`;
   $('skin-feedback').textContent = skinFeedback;
   $('motion-toggle').textContent = `动态效果：${reducedMotion ? '减弱' : '标准'}`;
+  $('audio-toggle').textContent = `转向音效：${melodicAudio ? '原声音律' : '原版'}`;
 }
 
 function play(forceTutorial = false) {
@@ -208,6 +212,13 @@ $('motion-toggle').addEventListener('click', () => {
   if (reducedMotion) shake = 0;
   try { localStorage.setItem('righty-reduced-motion', String(reducedMotion)); } catch { /* Local settings are optional. */ }
   syncUI();
+});
+$('audio-toggle').addEventListener('click', () => {
+  melodicAudio = !melodicAudio;
+  setMelodicMode(melodicAudio);
+  try { localStorage.setItem('righty-melodic-audio', String(melodicAudio)); } catch { /* Local settings are optional. */ }
+  syncUI();
+  playAudioEvent('menu-click');
 });
 $('tutorial-skip').addEventListener('click', event => { event.stopPropagation(); skipTutorial(game); consumeEvents(); syncUI(); });
 $('debug-panel').hidden = !debugMode;

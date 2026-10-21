@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "notes": {
+    "turn-upper-up": {
+      "source_clip": 87,
+      "source_sha256": "ec5eef3448c7e9c8ad6b3f43ae16544034818a27add7e991d1a264cb5aadb593",
+      "source_hz": 654.576,
+      "midi": 79,
+      "target_hz": 783.991,
+      "pitch_error_cents": -0.11
+    },
+    "turn-upper-right": {
+      "source_clip": 87,
+      "source_sha256": "ec5eef3448c7e9c8ad6b3f43ae16544034818a27add7e991d1a264cb5aadb593",
+      "source_hz": 654.576,
+      "midi": 77,
+      "target_hz": 698.456,
+      "pitch_error_cents": 0.07
+    },
+    "turn-upper-down": {
+      "source_clip": 87,
+      "source_sha256": "ec5eef3448c7e9c8ad6b3f43ae16544034818a27add7e991d1a264cb5aadb593",
+      "source_hz": 654.576,
+      "midi": 74,
+      "target_hz": 587.33,
+      "pitch_error_cents": 0.36
+    },
+    "turn-upper-left": {
+      "source_clip": 87,
+      "source_sha256": "ec5eef3448c7e9c8ad6b3f43ae16544034818a27add7e991d1a264cb5aadb593",
+      "source_hz": 654.576,
+      "midi": 70,
+      "target_hz": 466.164,
+      "pitch_error_cents": 1.86
+    },
+    "turn-middle-up": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 74,
+      "target_hz": 587.33,
+      "pitch_error_cents": 0.36
+    },
+    "turn-middle-right": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 72,
+      "target_hz": 523.251,
+      "pitch_error_cents": -0.2
+    },
+    "turn-middle-down": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 70,
+      "target_hz": 466.164,
+      "pitch_error_cents": -0.64
+    },
+    "turn-middle-left": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 67,
+      "target_hz": 391.995,
+      "pitch_error_cents": -0.11
+    },
+    "turn-lower-up": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 70,
+      "target_hz": 466.164,
+      "pitch_error_cents": -0.64
+    },
+    "turn-lower-right": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 67,
+      "target_hz": 391.995,
+      "pitch_error_cents": -0.11
+    },
+    "turn-lower-down": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 65,
+      "target_hz": 349.228,
+      "pitch_error_cents": 0.07
+    },
+    "turn-lower-left": {
+      "source_clip": 94,
+      "source_sha256": "44d9348bcd379e406354600a6e090217b464c0f1912ee3af6e0a3eb9f6090a97",
+      "source_hz": 490.385,
+      "midi": 62,
+      "target_hz": 293.665,
+      "pitch_error_cents": 0.36
+    }
+  }
+}
