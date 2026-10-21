@@ -9,6 +9,11 @@ export const TURN_BANDS = Object.freeze([
   Object.freeze(['turn-middle-up', 'turn-middle-right', 'turn-middle-down', 'turn-middle-left']),
   Object.freeze(['turn-lower-up', 'turn-lower-right', 'turn-lower-down', 'turn-lower-left'])
 ]);
+export const TURN_MIDI = Object.freeze([
+  Object.freeze([79, 77, 74, 70]),
+  Object.freeze([74, 72, 70, 67]),
+  Object.freeze([70, 67, 65, 62])
+]);
 
 export function turnTone(y, direction) {
   if (!Number.isFinite(y) || !Number.isInteger(direction) || direction < 0 || direction > 3) return null;

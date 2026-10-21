@@ -1,10 +1,10 @@
 import { turnTone } from './melody.mjs';
+import { SKINS, activeSkin, isSkinRevealed } from './skins.mjs';
 
 export const STEP = 1 / 60;
 export const ENEMY_TRAIL_LIFE = 0.62;
 // The Unity camera has a 3.84 world-unit orthographic half-height; 16:9 gives this field.
 export const WORLD = Object.freeze({ width: 13.653333333333334, height: 7.68, left: -6.826666666666667, right: 6.826666666666667, top: 3.84, bottom: -3.84 });
-const SKIN_COSTS = [0, 25, 25, 25, 25, 150, 150, 150, 150, 150];
 export const ENEMY_UNLOCK_SCORES = Object.freeze([0, 2, 4, 6, 8, 10, 12]);
 export const CLASSIC_ENEMY_UNLOCK_SCORES = Object.freeze([0, 5, 10, 15, 20, 25, 30]);
 export const ENEMY_TYPES = Object.freeze([
@@ -26,6 +26,10 @@ function between(game, lo, hi) { return lo + random(game) * (hi - lo); }
 
 function distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 function playerRadius(player) { return player.size * 0.85; }
+function hurtRadius(game) { return playerRadius(game.player) * activeSkin(game).hurt; }
+function pickupDistance(game, targetRadius) {
+  return (playerRadius(game.player) + targetRadius) * activeSkin(game).pickup;
+}
 function nearMissRadius(player) { return player.size * 3 * 0.42823535203933716; }
 function goalRadius(goal) { return goal.size * 2.325; }
 
@@ -61,13 +65,18 @@ function enemyHitsCircle(enemy, circle, padding = 0) {
 }
 
 export function createGame(saved = {}, seed = 0x1024) {
-  const unlocked = Array.isArray(saved.unlocked) ? saved.unlocked.filter(n => Number.isInteger(n) && n >= 0 && n < 10) : [0];
+  const unlocked = Array.isArray(saved.unlocked)
+    ? [...new Set([0, ...saved.unlocked.filter(n => Number.isInteger(n) && n >= 0 && n < SKINS.length)])]
+    : [0];
+  const totalPoints = Math.max(0, Number(saved.totalPoints) || 0);
+  const priorSpending = unlocked.reduce((sum, index) => sum + SKINS[index].cost, 0);
   return {
     status: 'menu', seed: seed >>> 0, events: [], toast: null,
     score: 0, lastScore: 0, lastTime: 0, best: Number(saved.best) || 0,
-    totalPoints: Number(saved.totalPoints) || 0,
+    totalPoints, lifetimePoints: Math.max(Number(saved.lifetimePoints) || 0, totalPoints + priorSpending),
     gamesPlayed: Number(saved.gamesPlayed) || 0,
     selectedSkin: unlocked.includes(saved.selectedSkin) ? saved.selectedSkin : 0,
+    roundSkin: 0,
     unlocked, tutorialSeen: saved.tutorialSeen === undefined ? Number(saved.gamesPlayed) > 0 : Boolean(saved.tutorialSeen),
     tutorial: null, introducedEnemies: [], nextEnemyId: 1,
     classicSpawns: Boolean(saved.classicSpawns), freezeFxTimer: 0,
@@ -79,14 +88,15 @@ export function createGame(saved = {}, seed = 0x1024) {
 }
 
 export function snapshotProgress(game) {
-  return { best: game.best, totalPoints: game.totalPoints, gamesPlayed: game.gamesPlayed,
+  return { best: game.best, totalPoints: game.totalPoints, lifetimePoints: game.lifetimePoints,
+    gamesPlayed: game.gamesPlayed,
     selectedSkin: game.selectedSkin, unlocked: [...game.unlocked], tutorialSeen: game.tutorialSeen };
 }
 
-export function skinCost(index) { return SKIN_COSTS[index] ?? Infinity; }
+export function skinCost(index) { return SKINS[index]?.cost ?? Infinity; }
 
 export function selectSkin(game, index) {
-  if (index < 0 || index >= SKIN_COSTS.length) return false;
+  if (index < 0 || index >= SKINS.length) return false;
   game.selectedSkin = index;
   return true;
 }
@@ -94,6 +104,7 @@ export function selectSkin(game, index) {
 export function buySkin(game) {
   const index = game.selectedSkin;
   if (game.unlocked.includes(index)) return true;
+  if (!isSkinRevealed(game, index)) return false;
   const cost = skinCost(index);
   if (game.totalPoints < cost) return false;
   game.totalPoints -= cost;
@@ -104,6 +115,7 @@ export function buySkin(game) {
 
 export function startRound(game) {
   game.status = 'playing';
+  game.roundSkin = game.unlocked.includes(game.selectedSkin) ? game.selectedSkin : 0;
   game.tutorial = null;
   game.events = [];
   game.score = 0;
@@ -140,6 +152,7 @@ export function startRound(game) {
 const TUTORIAL_LABELS = ['按键转向', '拾取并送回', '避开敌人'];
 
 function placeTutorialStage(game, stage) {
+  game.roundSkin = 0;
   game.tutorial = { stage, turns: 0, elapsed: 0, collected: false, failures: game.tutorial?.failures || 0 };
   game.status = 'tutorial';
   game.score = 0;
@@ -353,6 +366,7 @@ function finishRound(game) {
   game.lastTime = game.time;
   game.best = Math.max(game.best, game.score);
   game.totalPoints += game.score;
+  game.lifetimePoints += game.score;
   game.gamesPlayed++;
   emit(game, 'results');
 }
@@ -385,7 +399,7 @@ export function step(game) {
   const player = game.player;
   if (player.speed < 0.054) player.speed = Math.min(0.054, player.speed + 0.025 * STEP);
   player.size += player.growth * dtScale;
-  const speed = player.speed * dtScale;
+  const speed = player.speed * dtScale * activeSkin(game).speed;
   if (player.dir === 0) player.y += speed;
   else if (player.dir === 1) player.x += speed;
   else if (player.dir === 2) player.y -= speed;
@@ -413,7 +427,7 @@ export function step(game) {
   }
   game.goal.size = Math.max(goalSize(game.score), game.goal.size - 0.005 * STEP);
 
-  if (game.point?.phase === 'field' && distance(player, game.point) < playerRadius(player) + 1.95 * 0.15) {
+  if (game.point?.phase === 'field' && distance(player, game.point) < pickupDistance(game, 1.95 * 0.15)) {
     game.point.phase = 'carried';
     player.carrying = true;
     emit(game, 'pickup', '把光点送回圆环', { x: player.x, y: player.y });
@@ -479,7 +493,7 @@ export function step(game) {
       if (Math.hypot(enemy.x - tail.x, enemy.y - tail.y) >= 0.01) enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
       if (enemy.trail.length > 42) enemy.trail.shift();
     }
-    const hit = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: playerRadius(player) });
+    const hit = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: hurtRadius(game) });
     if (hit) { die(game, 'enemy'); break; }
     const close = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: nearMissRadius(player) });
     const stillClose = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: nearMissRadius(player) + .09 });
@@ -501,7 +515,7 @@ export function step(game) {
   if (game.status !== 'playing') return game;
   for (const bonus of game.bonuses) {
     if (game.freezeTimer <= 0) bonus.x += bonus.vx * STEP * dtScale;
-    if (distance(player, bonus) < playerRadius(player) + bonus.radius) {
+    if (distance(player, bonus) < pickupDistance(game, bonus.radius)) {
       bonus.gone = true;
       if (bonus.kind === 'points') score(game, 2, 'bonus', { x: bonus.x, y: bonus.y });
       else if (bonus.kind === 'freeze') {

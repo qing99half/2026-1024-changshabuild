@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, startRound, startTutorial, skipTutorial, step, turn, selectSkin, buySkin, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE } from '../src/core.mjs';
+import { SKINS, isSkinRevealed } from '../src/skins.mjs';
 
 test('one input turns 90 degrees and four inputs complete a circuit', () => {
   const game = createGame();
@@ -87,7 +88,8 @@ test('death leads to results and banks the score once', () => {
   assert.equal(game.status, 'dying');
   for (let i = 0; i < 121; i++) step(game);
   assert.equal(game.status, 'results');
-  assert.deepEqual(snapshotProgress(game), { best: 4, totalPoints: 9, gamesPlayed: 2, selectedSkin: 0, unlocked: [0], tutorialSeen: true });
+  assert.deepEqual(snapshotProgress(game), { best: 4, totalPoints: 9, lifetimePoints: 9,
+    gamesPlayed: 2, selectedSkin: 0, unlocked: [0], tutorialSeen: true });
   for (let i = 0; i < 30; i++) step(game);
   assert.equal(game.totalPoints, 9);
 });
@@ -288,4 +290,64 @@ test('the seventh hazard spawn is replaced by one bonus', () => {
   assert.equal(game.enemies.length, 0);
   assert.equal(game.bonuses.length, 1);
   assert.equal(game.spawned, 0);
+});
+
+test('legacy progress reveals secret skins without losing previously spent points', () => {
+  const migrated = createGame({ totalPoints: 20, unlocked: [0, 5], selectedSkin: 5 });
+  assert.equal(migrated.lifetimePoints, 170);
+  assert.equal(isSkinRevealed(migrated, 10), true);
+  assert.equal(isSkinRevealed(migrated, 11), false);
+  assert.equal(SKINS[10].cost, 300);
+  assert.equal(SKINS[11].cost, 450);
+  const hidden = createGame({ lifetimePoints: 149 });
+  assert.equal(isSkinRevealed(hidden, 10), false);
+  hidden.lifetimePoints = 150;
+  assert.equal(isSkinRevealed(hidden, 10), true);
+  const buyer = createGame({ totalPoints: 450, lifetimePoints: 450 });
+  selectSkin(buyer, 11);
+  assert.equal(buySkin(buyer), true);
+  assert.equal(buyer.totalPoints, 0);
+  assert.equal(snapshotProgress(buyer).lifetimePoints, 450);
+});
+
+test('skin movement and enemy hit radius change only within the equipped round', () => {
+  const base = createGame();
+  startRound(base);
+  base.player.x = 0; base.player.y = 0; base.player.dir = 1; base.player.speed = .054;
+  base.point = null; base.spawnTimer = -100;
+  step(base);
+  const neon = createGame({ unlocked: [0, 1], selectedSkin: 1 });
+  startRound(neon);
+  neon.player.x = 0; neon.player.y = 0; neon.player.dir = 1; neon.player.speed = .054;
+  neon.point = null; neon.spawnTimer = -100;
+  step(neon);
+  assert.ok(neon.player.x > base.player.x);
+  assert.ok(Math.abs(neon.player.x / base.player.x - 1.02) < 1e-9);
+  for (const game of [base, neon]) {
+    startRound(game);
+    game.player.x = 0; game.player.y = 0; game.player.dir = 1;
+    game.point = null; game.spawnTimer = -100;
+    game.enemies = [{ x: .6167, y: 0, vx: 0, vy: 0, type: 0, radius: .25, near: false }];
+    step(game);
+  }
+  assert.equal(base.status, 'playing');
+  assert.equal(neon.status, 'dying');
+  startTutorial(neon);
+  assert.equal(neon.roundSkin, 0);
+});
+
+test('pickup allowance changes without changing delivery or score rewards', () => {
+  const generous = createGame({ unlocked: [0, 3], selectedSkin: 3 });
+  const precise = createGame({ unlocked: [0, 4], selectedSkin: 4 });
+  for (const game of [generous, precise]) {
+    startRound(game);
+    game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+    game.point = { x: 0, y: .65, kind: 'normal', phase: 'field', returnTimer: 0 };
+    game.spawnTimer = -100;
+    step(game);
+  }
+  assert.equal(generous.player.carrying, true);
+  assert.equal(precise.player.carrying, false);
+  assert.equal(generous.score, 0);
+  assert.equal(precise.score, 0);
 });

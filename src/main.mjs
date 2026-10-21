@@ -1,24 +1,32 @@
 import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
-import { preloadAudio, playAudioEvent, startMusic, pauseMusic, setMusicPitch, setMelodicMode } from './audio.mjs';
+import { preloadAudio, preloadVoiceSet, playAudioEvent, startMusic, pauseMusic, setMusicPitch, setMelodicMode } from './audio.mjs';
+import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
 const ctx = canvas.getContext('2d', { alpha: false });
 const stage = $('stage');
-const colors = ['#dc5954', '#4fc9d8', '#edaa43', '#b56ad5', '#a9cc6b', '#2cc5f5', '#f1f1f1', '#31a8d9', '#d8d8d8', '#a7d257'];
-const skinNames = ['经典红', '霓虹蓝', '琥珀', '紫电', '青柠', '蓝色光环', '几何白', '星球', '像素白', '青柠星'];
+const colors = SKINS.map(skin => skin.color);
+const skinNames = SKINS.map(skin => skin.name);
+const skinDescriptions = [
+  '原版圆环 · 清脆音色', '双线光轨 · 明亮短音', '暖色火星 · 柔和短音',
+  '紫色电弧 · 轻微回声', '断续光点 · 干脆敲击', '环绕光圈 · 节拍回声',
+  '几何碎片 · 短促音色', '绕行光点 · 圆润低音', '像素方块 · 颗粒音色',
+  '青柠星芒 · 明亮回声', '猫爪粒子 · 哈吉米语音', '声波扩散 · 大狗叫语音'
+];
 const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba4d44', '#b9bdbf'];
 const enemyArt = ['EnemySquare-129.png', 'EnemySquare2-128.png', 'EnemySquare3-131.png', 'EnemySquare4-137.png', 'EnemySquare5-115.png', 'GoalZone1-136.png', 'EnemySquare7-134.png'];
 const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 'warning4-122.png', 'warning5-126.png', 'warning-118.png', 'warning7-150.png'];
 const fxArt = { arrow: 'texture-ArrowTrail-2-51.png', explode: 'texture-EnemyExplode-71.png', point: 'GoalZone1-136.png' };
 const bonusArt = { points: 'Plus2-142.png', freeze: 'Time-125.png', bomb: 'Bomb-132.png' };
-const skinArt = [null, null, null, null, null, 'Player06-02-139.png', 'Player07-01-113.png', 'Player08-151.png', 'Player09-112.png', 'Player10-01-145.png'];
+const skinArt = SKINS.map(skin => skin.art);
+const artUrl = file => file.startsWith('/') ? file : `/assets/original/${file}`;
 const artFiles = ['BackCircle-154.png', 'GoalZone-133.png', 'pointTurn02-124.png', ...enemyArt, ...warningArt,
   ...Object.values(fxArt), ...Object.values(bonusArt), ...skinArt].filter(Boolean);
 const art = new Map();
 for (const file of new Set(artFiles)) {
   const image = new Image();
-  image.src = `/assets/original/${file}`;
+  image.src = artUrl(file);
   art.set(file, image);
 }
 const debugMode = new URLSearchParams(location.search).has('debug');
@@ -37,6 +45,7 @@ let visualTime = 0;
 let lastStatus = game.status;
 let musicPitch = 1;
 let shake = 0;
+let skinMouthUntil = 0;
 const particles = [];
 const rings = [];
 const labels = [];
@@ -48,7 +57,7 @@ function save() {
 
 function consumeEvents() {
   for (const event of game.events.splice(0)) {
-    playAudioEvent(event.kind, event);
+    playAudioEvent(event.kind, { ...event, skinIndex: game.roundSkin });
     visualEvent(event);
     if (event.kind === 'results' || event.kind === 'unlock' || event.kind === 'tutorial-complete') save();
     if (event.kind === 'tutorial-stage' || event.kind === 'tutorial-retry') syncUI();
@@ -56,14 +65,14 @@ function consumeEvents() {
   }
 }
 
-function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, delay = 0, tintSprite = false) {
+function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, delay = 0, tintSprite = false, shape = null) {
   if (reducedMotion) count = Math.ceil(count * .3);
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const velocity = speed * (.45 + Math.random() * .75);
     particles.push({ x, y, vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
       age: -delay, life: lifetime * (.65 + Math.random() * .55), color,
-      radius: radius * (.55 + Math.random()), sprite, tintSprite, rotation: angle });
+      radius: radius * (.55 + Math.random()), sprite, tintSprite, shape, rotation: angle });
   }
 }
 
@@ -74,10 +83,11 @@ function ring(x, y, color, delay = 0, life = .5, maxRadius = 45) {
 function visualEvent(event) {
   const x = event.x ?? game.player?.x ?? 0, y = event.y ?? game.player?.y ?? 0;
   const goalX = game.goal?.x ?? 0, goalY = game.goal?.y ?? 0;
+  const skin = activeSkin(game);
   const scoreEvent = ['deliver', 'deliver-turn', 'near-miss', 'bonus', 'freeze', 'bomb'].includes(event.kind);
   if (scoreEvent) labels.push({ x, y, text: event.kind === 'bonus' ? '+2' : '+1', age: 0, life: .75 });
   if (event.kind === 'turn') {
-    for (const delay of [0, .1, .2]) ring(x, y, '#c9534f', delay, .5, 50);
+    for (const delay of [0, .1, .2]) ring(x, y, skin.color, delay, .5, 50);
   }
   if (event.kind === 'pickup') { burst(x, y, 30, 2, .75, '#f4f4f0', 7, fxArt.point); shake = Math.max(shake, .1); }
   if (event.kind === 'deliver') { burst(x, y, 30, 2, .75, '#ffffff', 7, fxArt.point); shake = Math.max(shake, .1); }
@@ -103,7 +113,28 @@ function visualEvent(event) {
     shake = Math.max(shake, .08);
   }
   if (event.kind === 'reverse') ring(goalX, goalY, '#e46359', 0, .7, 145);
-  if (event.kind === 'die') { burst(x, y, 75, 5, 3, colors[game.selectedSkin], 8, fxArt.explode); shake = Math.max(shake, .15); }
+  if (event.kind === 'die') { burst(x, y, 75, 5, 3, skin.color, 8, fxArt.explode); shake = Math.max(shake, .15); }
+  skinVisualEvent(event.kind, x, y, skin);
+}
+
+function skinVisualEvent(kind, x, y, skin) {
+  if (skin.voice && ['turn', 'pickup', 'deliver', 'deliver-turn'].includes(kind))
+    skinMouthUntil = visualTime + .13;
+  if (skin.fx === 'round' || !['turn', 'pickup', 'deliver', 'deliver-turn', 'die'].includes(kind)) return;
+  const count = kind === 'turn' ? 10 : kind === 'pickup' ? 8 : kind === 'die' ? 22 : 16;
+  const shape = {
+    neon: 'line', spark: 'line', polygon: 'diamond', pixel: 'pixel',
+    star: 'star', paws: 'paw', bark: 'wave'
+  }[skin.fx] || 'dot';
+  const life = skin.fx === 'ember' || skin.fx === 'orbit' ? .6 : .42;
+  burst(x, y, count, kind === 'turn' ? 1.5 : 2.3, life, skin.color,
+    skin.fx === 'dots' ? 2.4 : 4.2, null, 0, false, shape);
+  if (kind === 'turn' && ['halo', 'orbit', 'bark'].includes(skin.fx)) {
+    ring(x, y, skin.color, .03, .4, skin.fx === 'bark' ? 68 : 45);
+    if (skin.fx === 'bark') ring(x, y, skin.color, .12, .43, 78);
+  }
+  if ((kind === 'deliver' || kind === 'deliver-turn') && ['star', 'paws', 'bark'].includes(skin.fx))
+    ring(x, y, skin.color, 0, .55, 92);
 }
 
 function updateVisualEffects(dt) {
@@ -122,6 +153,39 @@ function updateVisualEffects(dt) {
   }
 }
 
+function drawSkinParticle(p, x, y, radius) {
+  if (!p.shape || p.shape === 'dot') { circle(x, y, radius, p.color); return; }
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(p.rotation);
+  ctx.fillStyle = p.color;
+  ctx.strokeStyle = p.color;
+  if (p.shape === 'line' || p.shape === 'wave') {
+    ctx.lineWidth = p.shape === 'wave' ? 1.5 : 2.4;
+    ctx.beginPath();
+    if (p.shape === 'wave') ctx.arc(0, 0, radius, -.9, .9);
+    else { ctx.moveTo(-radius, 0); ctx.lineTo(radius, 0); }
+    ctx.stroke();
+  } else if (p.shape === 'pixel') {
+    const edge = Math.max(2, radius * 1.65);
+    ctx.fillRect(-edge / 2, -edge / 2, edge, edge);
+  } else if (p.shape === 'paw') {
+    circle(0, radius * .25, radius * .58, p.color);
+    for (const dx of [-.8, 0, .8]) circle(dx * radius, -radius * .65, radius * .25, p.color);
+  } else {
+    const points = p.shape === 'star' ? 8 : 4;
+    ctx.beginPath();
+    for (let i = 0; i < points; i++) {
+      const angle = i * Math.PI * 2 / points - Math.PI / 2;
+      const r = p.shape === 'star' && i % 2 ? radius * .4 : radius;
+      if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+      else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawVisualEffects() {
   ctx.save();
   for (const wave of game.bombWaves) {
@@ -136,7 +200,7 @@ function drawVisualEffects() {
     const drawn = p.sprite && (p.tintSprite
       ? drawTintedArt(p.sprite, p.color, sx(p.x), sy(p.y), size)
       : drawArt(p.sprite, sx(p.x), sy(p.y), size));
-    if (!drawn) circle(sx(p.x), sy(p.y), size / 2, p.color);
+    if (!drawn) drawSkinParticle(p, sx(p.x), sy(p.y), size / 2);
   }
   for (const r of rings) {
     if (r.age < 0) continue;
@@ -173,19 +237,31 @@ function syncUI() {
   $('result-earned').textContent = `+${game.lastScore} 点`;
   $('result-balance').textContent = game.totalPoints;
   const index = game.selectedSkin;
-  $('skin-name').textContent = skinNames[index];
-  const preview = $('skin-dot');
-  preview.classList.toggle('has-art', Boolean(skinArt[index]));
-  preview.style.background = skinArt[index] ? `center / contain no-repeat url('/assets/original/${skinArt[index]}')` : colors[index];
+  const skin = SKINS[index];
+  const revealed = isSkinRevealed(game, index);
   const owned = game.unlocked.includes(index);
+  const delta = value => value === 1 ? '标准' : `${value > 1 ? '+' : ''}${Math.round((value - 1) * 100)}%`;
+  $('skin-name').textContent = revealed ? skin.name : '???';
+  const preview = $('skin-dot');
+  preview.classList.toggle('has-art', revealed && Boolean(skin.art));
+  preview.classList.toggle('secret', !revealed);
+  preview.style.background = !revealed ? '' : skin.art ? `center / contain no-repeat url('${artUrl(skin.art)}')` : skin.color;
   const cost = skinCost(index);
   $('start').firstChild.textContent = owned ? '开始游戏 ' : '使用经典红开始 ';
-  $('skin-state').textContent = owned ? '已拥有' : `需 ${cost} 点`;
-  $('skin-buy').hidden = owned;
+  $('skin-state').textContent = !revealed
+    ? `隐藏球 · 生涯 ${game.lifetimePoints}/${skin.revealAt}`
+    : owned ? '已拥有' : `需 ${cost} 点`;
+  $('skin-description').textContent = revealed ? skinDescriptions[index] : '继续游玩，揭开隐藏球的身份';
+  $('skin-traits').hidden = !revealed;
+  $('skin-traits').innerHTML = revealed
+    ? `<span>速度 <b>${delta(skin.speed)}</b></span><span>危险圈 <b>${delta(skin.hurt)}</b></span><span>拾取 <b>${delta(skin.pickup)}</b></span>`
+    : '';
+  $('skin-preview').hidden = !revealed;
+  $('skin-buy').hidden = owned || !revealed;
   $('skin-buy').textContent = game.totalPoints >= cost ? `解锁 · ${cost} 点` : `还差 ${cost - game.totalPoints} 点`;
   $('skin-feedback').textContent = skinFeedback;
   $('motion-toggle').textContent = `动态效果：${reducedMotion ? '减弱' : '标准'}`;
-  $('audio-toggle').textContent = `转向音效：${melodicAudio ? '原声音律' : '原版'}`;
+  $('audio-toggle').textContent = `常规球转向：${melodicAudio ? '原声音律' : '原版'}`;
 }
 
 function play(forceTutorial = false) {
@@ -196,6 +272,7 @@ function play(forceTutorial = false) {
   particles.length = 0; rings.length = 0; labels.length = 0; shake = 0;
   if (forceTutorial || !game.tutorialSeen) startTutorial(game);
   else startRound(game);
+  preloadVoiceSet(activeSkin(game).voice);
   musicPitch = 1;
   accumulator = 0;
   consumeEvents();
@@ -266,11 +343,19 @@ for (const [id, direction] of [['skin-prev', -1], ['skin-next', 1]]) {
     selectSkin(game, (game.selectedSkin + colors.length + direction) % colors.length);
     skinFeedback = '';
     save(); syncUI(); playAudioEvent('menu-click');
+    if (isSkinRevealed(game, game.selectedSkin)) preloadVoiceSet(SKINS[game.selectedSkin].voice);
   });
 }
+$('skin-preview').addEventListener('click', async () => {
+  const index = game.selectedSkin;
+  await preloadVoiceSet(SKINS[index].voice);
+  if (game.selectedSkin === index && isSkinRevealed(game, index))
+    playAudioEvent('turn', { skinIndex: index, toneBand: 1, dir: 1, toneId: 'turn-middle-right' });
+});
 $('skin-buy').addEventListener('click', () => {
   if (buySkin(game)) {
     skinFeedback = `${skinNames[game.selectedSkin]} 已解锁，下一局可使用`;
+    preloadVoiceSet(SKINS[game.selectedSkin].voice);
     consumeEvents(); save(); syncUI();
   } else {
     skinFeedback = `还差 ${skinCost(game.selectedSkin) - game.totalPoints} 点，继续游玩即可解锁`;
@@ -493,17 +578,40 @@ function drawBonuses() {
 function drawPlayer() {
   if (!game.player) return;
   const player = game.player, x = sx(player.x), y = sy(player.y), r = px(player.size * .82);
-  const color = colors[game.selectedSkin];
+  const skin = activeSkin(game), color = skin.color;
   for (let i = 1; i < game.trail.length; i++) {
     const previous = game.trail[i - 1], current = game.trail[i];
-    ctx.strokeStyle = color + Math.round(Math.max(0, current.ttl / .25) * 70).toString(16).padStart(2, '0');
-    ctx.lineWidth = r * 1.35;
+    const fade = Math.max(0, current.ttl / .25);
+    ctx.strokeStyle = color + Math.round(fade * 92).toString(16).padStart(2, '0');
+    ctx.lineWidth = r * (skin.fx === 'neon' ? .55 : skin.fx === 'dots' ? .4 : 1.2);
     ctx.lineCap = 'round';
+    if (skin.fx === 'dots') ctx.setLineDash([r * .3, r * .58]);
     ctx.beginPath(); ctx.moveTo(sx(previous.x), sy(previous.y)); ctx.lineTo(sx(current.x), sy(current.y)); ctx.stroke();
-    if (i % 3 === 0) circle(sx(current.x) + Math.sin(i * 7.7) * r * .55, sy(current.y) + Math.cos(i * 5.2) * r * .55, 1 + i % 4, color + 'a0');
+    ctx.setLineDash([]);
+    if (skin.fx === 'neon') {
+      const dx = sx(current.x - previous.x), dy = sy(current.y - previous.y);
+      const length = Math.hypot(dx, dy) || 1;
+      const ox = -dy / length * r * .32, oy = dx / length * r * .32;
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#e1fcff' + Math.round(fade * 170).toString(16).padStart(2, '0');
+      ctx.beginPath(); ctx.moveTo(sx(previous.x) + ox, sy(previous.y) + oy);
+      ctx.lineTo(sx(current.x) + ox, sy(current.y) + oy); ctx.stroke();
+    }
+    if (i % 4 === 0) {
+      const shape = { polygon: 'diamond', pixel: 'pixel', star: 'star', paws: 'paw', bark: 'wave', spark: 'line' }[skin.fx] || 'dot';
+      const offset = skin.fx === 'orbit' ? r * .65 : r * .35;
+      ctx.globalAlpha = fade * .7;
+      drawSkinParticle({ shape, color, rotation: i * .8 }, sx(current.x) + Math.sin(i * 7.7) * offset,
+        sy(current.y) + Math.cos(i * 5.2) * offset, skin.fx === 'paws' ? 3 : 2.5);
+      ctx.globalAlpha = 1;
+    }
   }
   circle(x + 2, y + 3, r, '#0000008c');
-  if (!skinArt[game.selectedSkin] || !drawArt(skinArt[game.selectedSkin], x, y, r * 2.05)) circle(x, y, r, color);
+  if (!skin.art || !drawArt(skin.art, x, y, r * 2.05)) circle(x, y, r, color);
+  if (skin.voice && visualTime < skinMouthUntil) {
+    ctx.fillStyle = '#543338';
+    ctx.beginPath(); ctx.ellipse(x, y + r * .4, r * .15, r * .11, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  circle(x, y, px(player.size * .85 * skin.hurt), null, color + '30', 1);
   if (player.carrying) circle(x, y, r * .79, '#f1f1ef', color, 2);
   if (!player.clockwise) {
     ctx.fillStyle = '#fff'; ctx.font = '900 16px Arial'; ctx.textAlign = 'center'; ctx.fillText('↶', x, y + r + 22);
