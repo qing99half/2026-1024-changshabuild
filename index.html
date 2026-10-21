@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#29292b">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Righty Tighty XL · 网页玩法原型</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main id="app">
+    <div id="stage" aria-label="游戏场地">
+      <canvas id="game" width="960" height="540" aria-label="横屏游戏画面：点击或按空格使圆球转向"></canvas>
+      <button id="pause" class="icon-button" type="button" aria-label="暂停游戏">Ⅱ</button>
+      <section id="menu" class="screen" aria-labelledby="menu-title">
+        <div class="menu-content">
+          <div class="eyebrow">ONE BUTTON ARCADE</div>
+          <h1 id="menu-title"><img class="brand-logo" src="/assets/original/TITLE_MAINLOGO-158.png" alt="RIGHTY TIGHTY XL"></h1>
+          <p class="lead">每按一次，转向 90°。拾取光点，送回圆环。</p>
+          <button id="start" class="primary" type="button">开始游戏 <span>↗</span></button>
+          <button id="replay-tutorial" class="text-button tutorial-replay" type="button">练习操作</button>
+          <button id="motion-toggle" class="text-button motion-toggle" type="button">动态效果：标准</button>
+          <p class="hint">空格 / 鼠标点击 / 触屏点击：转向 · Esc：暂停</p>
+        </div>
+        <div class="menu-side">
+          <div class="small-title">PLAYER SELECT</div>
+          <div class="skin-picker">
+            <button id="skin-prev" class="arrow" type="button" aria-label="上一个外观">‹</button>
+            <div class="skin-info"><span id="skin-dot" aria-hidden="true"></span><strong id="skin-name">经典红</strong><small id="skin-state">已拥有</small></div>
+            <button id="skin-next" class="arrow" type="button" aria-label="下一个外观">›</button>
+          </div>
+          <button id="skin-buy" class="minor" type="button" hidden>解锁</button>
+          <div id="skin-feedback" class="skin-feedback" role="status" aria-live="polite"></div>
+          <div class="stat-pair"><span class="stat-label"><img src="/assets/original/Best-147.png" alt="">最高分</span><strong id="menu-best">0</strong></div>
+          <div class="stat-pair"><span>累计点数</span><strong id="menu-points">0</strong></div>
+        </div>
+      </section>
+      <section id="tutorial" class="tutorial-hud" hidden aria-label="操作教程">
+        <div class="tutorial-card">
+          <div class="eyebrow">HOW TO PLAY <span id="tutorial-step">01 / 03</span></div>
+          <h2 id="tutorial-title">点击，改变方向</h2>
+          <p id="tutorial-detail">连续转向两次，感受单键操作</p>
+          <img id="tutorial-input" src="/assets/original/Instruct_Control_Space-143.png" alt="按空格或点击屏幕转向">
+        </div>
+        <button id="tutorial-skip" type="button">跳过教程 →</button>
+      </section>
+      <section id="debug-panel" class="debug-panel" hidden aria-label="特效测试面板">
+        <button type="button" data-debug="points">+2</button>
+        <button type="button" data-debug="freeze">冻结</button>
+        <button type="button" data-debug="bomb">炸弹</button>
+        <button type="button" data-debug="turn">反转点</button>
+        <button type="button" data-debug="gallery">七敌展示</button>
+        <button type="button" data-debug="wall">撞墙碎裂</button>
+      </section>
+      <section id="paused" class="screen compact" hidden aria-labelledby="paused-title">
+        <div class="modal">
+          <div class="eyebrow">TAKE A BREATH</div>
+          <h2 id="paused-title">已暂停</h2>
+          <p>下一次转向，可能就是破纪录的开始。</p>
+          <button id="resume" class="primary" type="button">继续游戏 <span>↗</span></button>
+          <button id="menu-from-pause" class="text-button" type="button">返回菜单</button>
+        </div>
+      </section>
+      <section id="results" class="screen compact" hidden aria-labelledby="results-title">
+        <div class="modal result-modal">
+          <div class="eyebrow">ROUND COMPLETE</div>
+          <h2 id="results-title">再来一局？</h2>
+          <div class="result-score" id="result-score">0</div>
+          <div class="result-meta"><span><img src="/assets/original/Time-125.png" alt="">用时 <strong id="result-time">0.00s</strong></span><span><img src="/assets/original/Best-147.png" alt="">最佳 <strong id="result-best">0</strong></span></div>
+          <div class="result-reward"><span>本局获得 <strong id="result-earned">+0 点</strong></span><small>当前余额 <b id="result-balance">0</b></small></div>
+          <button id="restart" class="primary" type="button">再玩一次 <span>↗</span></button>
+          <button id="menu-from-results" class="text-button" type="button">返回菜单</button>
+        </div>
+      </section>
+    </div>
+    <div id="rotate" aria-live="polite"><span>↻</span><strong>请横屏游玩</strong><small>旋转手机后即可开始</small></div>
+  </main>
+  <script type="module" src="/src/main.mjs"></script>
+</body>
+</html>

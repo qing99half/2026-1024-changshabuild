@@ -1,0 +1,5 @@
+node_modules/
+*.log
+qa-*.png
+qa-*.jpg
+rollback-*.png

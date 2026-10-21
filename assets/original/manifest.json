@@ -1,0 +1,770 @@
+{
+  "source": "D:\\steam\\steamapps\\common\\Righty Tighty XL\\RightyTightyXL_Data\\data.unity3d",
+  "assets": [
+    {
+      "name": "unnamed",
+      "pathId": 427,
+      "file": "unnamed-427.png",
+      "width": 2048,
+      "height": 1024
+    },
+    {
+      "name": "Player09",
+      "pathId": 112,
+      "file": "Player09-112.png",
+      "width": 473,
+      "height": 498
+    },
+    {
+      "name": "Player07-01",
+      "pathId": 113,
+      "file": "Player07-01-113.png",
+      "width": 404,
+      "height": 403
+    },
+    {
+      "name": "moreBy_Overlay_MoreAdam",
+      "pathId": 114,
+      "file": "moreBy_Overlay_MoreAdam-114.png",
+      "width": 861,
+      "height": 53
+    },
+    {
+      "name": "EnemySquare5",
+      "pathId": 115,
+      "file": "EnemySquare5-115.png",
+      "width": 469,
+      "height": 478
+    },
+    {
+      "name": "Player06-01",
+      "pathId": 116,
+      "file": "Player06-01-116.png",
+      "width": 403,
+      "height": 403
+    },
+    {
+      "name": "Indicator",
+      "pathId": 117,
+      "file": "Indicator-117.png",
+      "width": 253,
+      "height": 256
+    },
+    {
+      "name": "warning",
+      "pathId": 118,
+      "file": "warning-118.png",
+      "width": 356,
+      "height": 300
+    },
+    {
+      "name": "ArrowRight",
+      "pathId": 119,
+      "file": "ArrowRight-119.png",
+      "width": 460,
+      "height": 468
+    },
+    {
+      "name": "moreBy_Overlay_Layer2",
+      "pathId": 120,
+      "file": "moreBy_Overlay_Layer2-120.png",
+      "width": 1024,
+      "height": 666
+    },
+    {
+      "name": "moreBy_Overlay_DevNote",
+      "pathId": 121,
+      "file": "moreBy_Overlay_DevNote-121.png",
+      "width": 557,
+      "height": 53
+    },
+    {
+      "name": "warning4",
+      "pathId": 122,
+      "file": "warning4-122.png",
+      "width": 356,
+      "height": 299
+    },
+    {
+      "name": "Player10-02",
+      "pathId": 123,
+      "file": "Player10-02-123.png",
+      "width": 344,
+      "height": 339
+    },
+    {
+      "name": "pointTurn02",
+      "pathId": 124,
+      "file": "pointTurn02-124.png",
+      "width": 137,
+      "height": 137
+    },
+    {
+      "name": "Time",
+      "pathId": 125,
+      "file": "Time-125.png",
+      "width": 466,
+      "height": 476
+    },
+    {
+      "name": "warning5",
+      "pathId": 126,
+      "file": "warning5-126.png",
+      "width": 356,
+      "height": 300
+    },
+    {
+      "name": "Instruct_Control_GamepadON",
+      "pathId": 127,
+      "file": "Instruct_Control_GamepadON-127.png",
+      "width": 319,
+      "height": 192
+    },
+    {
+      "name": "EnemySquare2",
+      "pathId": 128,
+      "file": "EnemySquare2-128.png",
+      "width": 512,
+      "height": 316
+    },
+    {
+      "name": "EnemySquare",
+      "pathId": 129,
+      "file": "EnemySquare-129.png",
+      "width": 469,
+      "height": 478
+    },
+    {
+      "name": "pointTurn",
+      "pathId": 130,
+      "file": "pointTurn-130.png",
+      "width": 231,
+      "height": 231
+    },
+    {
+      "name": "EnemySquare3",
+      "pathId": 131,
+      "file": "EnemySquare3-131.png",
+      "width": 291,
+      "height": 478
+    },
+    {
+      "name": "Bomb",
+      "pathId": 132,
+      "file": "Bomb-132.png",
+      "width": 466,
+      "height": 476
+    },
+    {
+      "name": "GoalZone",
+      "pathId": 133,
+      "file": "GoalZone-133.png",
+      "width": 263,
+      "height": 268
+    },
+    {
+      "name": "EnemySquare7",
+      "pathId": 134,
+      "file": "EnemySquare7-134.png",
+      "width": 290,
+      "height": 315
+    },
+    {
+      "name": "warning6",
+      "pathId": 135,
+      "file": "warning6-135.png",
+      "width": 356,
+      "height": 299
+    },
+    {
+      "name": "GoalZone1",
+      "pathId": 136,
+      "file": "GoalZone1-136.png",
+      "width": 239,
+      "height": 251
+    },
+    {
+      "name": "EnemySquare4",
+      "pathId": 137,
+      "file": "EnemySquare4-137.png",
+      "width": 512,
+      "height": 478
+    },
+    {
+      "name": "pulse",
+      "pathId": 138,
+      "file": "pulse-138.png",
+      "width": 396,
+      "height": 398
+    },
+    {
+      "name": "Player06-02",
+      "pathId": 139,
+      "file": "Player06-02-139.png",
+      "width": 515,
+      "height": 515
+    },
+    {
+      "name": "Player10-03",
+      "pathId": 140,
+      "file": "Player10-03-140.png",
+      "width": 344,
+      "height": 339
+    },
+    {
+      "name": "moreBy_Backgroudn",
+      "pathId": 141,
+      "file": "moreBy_Backgroudn-141.png",
+      "width": 474,
+      "height": 256
+    },
+    {
+      "name": "Plus2",
+      "pathId": 142,
+      "file": "Plus2-142.png",
+      "width": 466,
+      "height": 476
+    },
+    {
+      "name": "Instruct_Control_Space",
+      "pathId": 143,
+      "file": "Instruct_Control_Space-143.png",
+      "width": 329,
+      "height": 149
+    },
+    {
+      "name": "Instruct_Control_MouseON",
+      "pathId": 144,
+      "file": "Instruct_Control_MouseON-144.png",
+      "width": 182,
+      "height": 269
+    },
+    {
+      "name": "Player10-01",
+      "pathId": 145,
+      "file": "Player10-01-145.png",
+      "width": 473,
+      "height": 498
+    },
+    {
+      "name": "warning2",
+      "pathId": 146,
+      "file": "warning2-146.png",
+      "width": 356,
+      "height": 299
+    },
+    {
+      "name": "Best",
+      "pathId": 147,
+      "file": "Best-147.png",
+      "width": 466,
+      "height": 476
+    },
+    {
+      "name": "moreBy_ImageSize",
+      "pathId": 148,
+      "file": "moreBy_ImageSize-148.png",
+      "width": 458,
+      "height": 248
+    },
+    {
+      "name": "header-footer",
+      "pathId": 149,
+      "file": "header-footer-149.png",
+      "width": 502,
+      "height": 108
+    },
+    {
+      "name": "warning7",
+      "pathId": 150,
+      "file": "warning7-150.png",
+      "width": 356,
+      "height": 300
+    },
+    {
+      "name": "Player08",
+      "pathId": 151,
+      "file": "Player08-151.png",
+      "width": 403,
+      "height": 403
+    },
+    {
+      "name": "TransitionCircle",
+      "pathId": 152,
+      "file": "TransitionCircle-152.png",
+      "width": 938,
+      "height": 963
+    },
+    {
+      "name": "ArrowLeft",
+      "pathId": 153,
+      "file": "ArrowLeft-153.png",
+      "width": 460,
+      "height": 468
+    },
+    {
+      "name": "BackCircle",
+      "pathId": 154,
+      "file": "BackCircle-154.png",
+      "width": 248,
+      "height": 415
+    },
+    {
+      "name": "moreBy_VideoSize",
+      "pathId": 155,
+      "file": "moreBy_VideoSize-155.png",
+      "width": 458,
+      "height": 260
+    },
+    {
+      "name": "TITLE_MAINLOGO_02",
+      "pathId": 156,
+      "file": "TITLE_MAINLOGO_02-156.png",
+      "width": 945,
+      "height": 351
+    },
+    {
+      "name": "moreBy_Overlay_Layer1",
+      "pathId": 157,
+      "file": "moreBy_Overlay_Layer1-157.png",
+      "width": 1024,
+      "height": 666
+    },
+    {
+      "name": "TITLE_MAINLOGO",
+      "pathId": 158,
+      "file": "TITLE_MAINLOGO-158.png",
+      "width": 929,
+      "height": 360
+    },
+    {
+      "name": "WhiteNothing",
+      "pathId": 159,
+      "file": "WhiteNothing-159.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "WhiteNothing2",
+      "pathId": 160,
+      "file": "WhiteNothing2-160.png",
+      "width": 256,
+      "height": 256
+    },
+    {
+      "name": "Round",
+      "pathId": 161,
+      "file": "Round-161.png",
+      "width": 466,
+      "height": 476
+    },
+    {
+      "name": "warning3",
+      "pathId": 162,
+      "file": "warning3-162.png",
+      "width": 356,
+      "height": 300
+    },
+    {
+      "name": "Player07-02",
+      "pathId": 163,
+      "file": "Player07-02-163.png",
+      "width": 605,
+      "height": 605
+    },
+    {
+      "name": "Border",
+      "pathId": 164,
+      "file": "Border-164.png",
+      "width": 512,
+      "height": 243
+    }
+  ],
+  "textures": [
+    {
+      "name": "Player09",
+      "pathId": 21,
+      "file": "texture-Player09-21.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "Player07-01",
+      "pathId": 22,
+      "file": "texture-Player07-01-22.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "moreBy_Overlay_MoreAdam",
+      "pathId": 23,
+      "file": "texture-moreBy_Overlay_MoreAdam-23.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "EnemySquare5",
+      "pathId": 25,
+      "file": "texture-EnemySquare5-25.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Player06-01",
+      "pathId": 26,
+      "file": "texture-Player06-01-26.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "Indicator",
+      "pathId": 27,
+      "file": "texture-Indicator-27.png",
+      "width": 256,
+      "height": 256
+    },
+    {
+      "name": "warning",
+      "pathId": 28,
+      "file": "texture-warning-28.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "ArrowRight",
+      "pathId": 29,
+      "file": "texture-ArrowRight-29.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "moreBy_Overlay_Layer2",
+      "pathId": 30,
+      "file": "texture-moreBy_Overlay_Layer2-30.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "moreBy_Overlay_DevNote",
+      "pathId": 31,
+      "file": "texture-moreBy_Overlay_DevNote-31.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "warning4",
+      "pathId": 32,
+      "file": "texture-warning4-32.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Player10-02",
+      "pathId": 33,
+      "file": "texture-Player10-02-33.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "pointTurn02",
+      "pathId": 35,
+      "file": "texture-pointTurn02-35.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Time",
+      "pathId": 36,
+      "file": "texture-Time-36.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "warning5",
+      "pathId": 37,
+      "file": "texture-warning5-37.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Instruct_Control_GamepadON",
+      "pathId": 38,
+      "file": "texture-Instruct_Control_GamepadON-38.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "EnemySquare2",
+      "pathId": 39,
+      "file": "texture-EnemySquare2-39.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "EnemySquare",
+      "pathId": 40,
+      "file": "texture-EnemySquare-40.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "pointTurn",
+      "pathId": 41,
+      "file": "texture-pointTurn-41.png",
+      "width": 256,
+      "height": 256
+    },
+    {
+      "name": "EnemySquare3",
+      "pathId": 42,
+      "file": "texture-EnemySquare3-42.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Bomb",
+      "pathId": 43,
+      "file": "texture-Bomb-43.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "GoalZone",
+      "pathId": 45,
+      "file": "texture-GoalZone-45.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "EnemySquare7",
+      "pathId": 46,
+      "file": "texture-EnemySquare7-46.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "warning6",
+      "pathId": 47,
+      "file": "texture-warning6-47.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "GoalZone1",
+      "pathId": 48,
+      "file": "texture-GoalZone1-48.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "EnemySquare4",
+      "pathId": 49,
+      "file": "texture-EnemySquare4-49.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "pulse",
+      "pathId": 50,
+      "file": "texture-pulse-50.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "ArrowTrail 2",
+      "pathId": 51,
+      "file": "texture-ArrowTrail-2-51.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Player06-02",
+      "pathId": 52,
+      "file": "texture-Player06-02-52.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "Player10-03",
+      "pathId": 53,
+      "file": "texture-Player10-03-53.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "moreBy_Backgroudn",
+      "pathId": 54,
+      "file": "texture-moreBy_Backgroudn-54.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Plus2",
+      "pathId": 56,
+      "file": "texture-Plus2-56.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Instruct_Control_Space",
+      "pathId": 57,
+      "file": "texture-Instruct_Control_Space-57.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Instruct_Control_MouseON",
+      "pathId": 58,
+      "file": "texture-Instruct_Control_MouseON-58.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Player10-01",
+      "pathId": 59,
+      "file": "texture-Player10-01-59.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "warning2",
+      "pathId": 60,
+      "file": "texture-warning2-60.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Best",
+      "pathId": 61,
+      "file": "texture-Best-61.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "moreBy_ImageSize",
+      "pathId": 62,
+      "file": "texture-moreBy_ImageSize-62.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "header-footer",
+      "pathId": 63,
+      "file": "texture-header-footer-63.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "warning7",
+      "pathId": 64,
+      "file": "texture-warning7-64.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Player08",
+      "pathId": 66,
+      "file": "texture-Player08-66.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "TransitionCircle",
+      "pathId": 67,
+      "file": "texture-TransitionCircle-67.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "ArrowLeft",
+      "pathId": 68,
+      "file": "texture-ArrowLeft-68.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "BackCircle",
+      "pathId": 69,
+      "file": "texture-BackCircle-69.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "moreBy_VideoSize",
+      "pathId": 70,
+      "file": "texture-moreBy_VideoSize-70.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "EnemyExplode",
+      "pathId": 71,
+      "file": "texture-EnemyExplode-71.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "TITLE_MAINLOGO_02",
+      "pathId": 73,
+      "file": "texture-TITLE_MAINLOGO_02-73.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "moreBy_Overlay_Layer1",
+      "pathId": 74,
+      "file": "texture-moreBy_Overlay_Layer1-74.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "TITLE_MAINLOGO",
+      "pathId": 75,
+      "file": "texture-TITLE_MAINLOGO-75.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "WhiteNothing",
+      "pathId": 76,
+      "file": "texture-WhiteNothing-76.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "WhiteNothing2",
+      "pathId": 77,
+      "file": "texture-WhiteNothing2-77.png",
+      "width": 256,
+      "height": 256
+    },
+    {
+      "name": "Round",
+      "pathId": 78,
+      "file": "texture-Round-78.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "warning3",
+      "pathId": 79,
+      "file": "texture-warning3-79.png",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "name": "Player07-02",
+      "pathId": 80,
+      "file": "texture-Player07-02-80.png",
+      "width": 1024,
+      "height": 1024
+    },
+    {
+      "name": "Border",
+      "pathId": 81,
+      "file": "texture-Border-81.png",
+      "width": 512,
+      "height": 512
+    }
+  ]
+}
