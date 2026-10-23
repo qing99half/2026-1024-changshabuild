@@ -31,8 +31,8 @@ h1 span { color: #db5b55; }
 .skin-info strong { font-size: clamp(13px, 1.55cqw, 22px); }
 .skin-info small { color: #bab9b9; font-size: clamp(9px, 1cqw, 14px); }
 .skin-description { min-height: 1.55cqw; color: #e4d9d3; font-size: clamp(9px, 1.03cqw, 14px); text-align: center; }
-.skin-traits { display: flex; justify-content: space-between; gap: .3cqw; margin: .5cqw 0; padding: .55cqw 0; border-block: 1px solid #ffffff20; color: #bdbabc; font-size: clamp(8px, .87cqw, 12px); white-space: nowrap; }
-.skin-traits span { display: flex; flex-direction: column; align-items: center; gap: .15cqw; }
+.skin-traits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55cqw .3cqw; margin: .5cqw 0; padding: .7cqw 0; border-block: 1px solid #ffffff20; color: #bdbabc; font-size: clamp(8px, .87cqw, 12px); white-space: nowrap; }
+.skin-traits span { display: flex; justify-content: space-between; align-items: center; gap: .15cqw; }
 .skin-traits b { color: #f5e5d9; font-size: 1.15em; }
 .skin-preview { display: block; width: 100%; min-height: 28px; margin: .25cqw 0; padding: .15em .4em; border: 0; color: #e6cfc7; background: none; font-size: clamp(9px, 1cqw, 14px); }
 .skin-preview:hover { color: #fff; }
@@ -71,6 +71,7 @@ h1 span { color: #db5b55; }
 .result-reward { display: flex; flex-direction: column; align-items: center; gap: .25cqw; margin-top: 1.4cqw; color: #ddd; font-size: clamp(11px, 1.25cqw, 18px); }
 .result-reward strong { color: #f09a91; }
 .result-reward small { color: #aaa; font-size: .78em; }
+.result-reward #result-style { color: #ffe2aa; }
 .result-reward b { color: #f5f4f2; }
 .icon-button { position: absolute; z-index: 4; top: 2%; left: 2%; width: max(44px, 4cqw); height: max(44px, 4cqw); border: 1px solid #ffffff5c; border-radius: 50%; color: #fff; background: #2424279c; font-size: clamp(17px, 2cqw, 26px); }
 #rotate { display: none; }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, startRound, startTutorial, skipTutorial, step, turn, selectSkin, buySkin, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE } from '../src/core.mjs';
+import { createGame, startRound, startTutorial, skipTutorial, step, turn, selectSkin, buySkin, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE, grazeBounds } from '../src/core.mjs';
 import { SKINS, isSkinRevealed } from '../src/skins.mjs';
 
 test('one input turns 90 degrees and four inputs complete a circuit', () => {
@@ -64,19 +64,125 @@ test('special delivery eases down to quarter speed and back', () => {
   assert.equal(game.slowPhase, null);
 });
 
-test('a near miss scores once when the player leaves the danger zone', () => {
+test('a head-on side graze scores once when the player leaves the danger zone', () => {
   const game = createGame();
   startRound(game);
-  game.player.x = 0;
-  game.player.y = 0;
-  game.enemies = [{ x: .65, y: 0, vx: 0, vy: 0, type: 0, shape: 'square', radius: .21, near: false }];
+  game.player.x = 0; game.player.y = .76; game.player.dir = 3; game.player.speed = 0;
+  game.point = null; game.spawnTimer = -100;
+  game.enemies = [{ x: 0, y: 0, vx: 2.4, vy: 0, type: 0, shape: 'square', radius: .25, hitW: .5, hitH: .5, near: false }];
   step(game);
   assert.equal(game.score, 0);
   assert.equal(game.enemies[0].near, true);
-  game.enemies[0].x = .95;
+  game.enemies[0].x = 1.2;
   step(game);
   assert.equal(game.score, 1);
-  assert.equal(game.enemies.some(enemy => enemy.x === .95), false);
+  assert.equal(game.events.find(event => event.kind === 'near-miss').mode, 'head-on');
+});
+
+test('graze requires front perpendicular or aligned side head-on motion', () => {
+  for (const direction of [1, -1]) {
+    for (const [position, heading, expectedMode] of [
+      ['front', 0, 'perpendicular'], ['front', 2, 'perpendicular'],
+      ['side', direction > 0 ? 3 : 1, 'head-on'],
+      ['front', direction > 0 ? 3 : 1, null],
+      ['side', 0, null], ['side', direction > 0 ? 1 : 3, null]
+    ]) {
+      const game = createGame(); startRound(game);
+      game.point = null; game.spawnTimer = -100;
+      game.player.x = position === 'front' ? .3 * direction : 0;
+      game.player.y = .76; game.player.dir = heading; game.player.speed = 0;
+      game.enemies = [{ id: 72, x: 0, y: 0, vx: 2.4 * direction, vy: 0,
+        type: 0, radius: .25, hitW: .5, hitH: .5, near: false }];
+      step(game);
+      game.enemies[0].x = 2 * direction;
+      step(game);
+      assert.equal(game.score, expectedMode ? 1 : 0, `${direction} ${position} ${heading}`);
+      if (expectedMode) assert.equal(game.events.find(e => e.kind === 'near-miss').mode, expectedMode);
+    }
+  }
+});
+
+test('invalid graze expires and cannot be claimed by turning after exit', () => {
+  const game = createGame(); startRound(game);
+  game.point = null; game.spawnTimer = -100;
+  game.player.x = 0; game.player.y = .76; game.player.dir = 1; game.player.speed = 0;
+  game.enemies = [{ id: 73, x: 0, y: 0, vx: 2.4, vy: 0,
+    type: 0, radius: .25, hitW: .5, hitH: .5, near: false }];
+  step(game);
+  assert.equal(game.enemies[0].near, true);
+  game.enemies[0].x = 2;
+  step(game);
+  assert.equal(game.enemies[0].near, false);
+  game.player.dir = 3;
+  step(game);
+  assert.equal(game.score, 0);
+});
+
+test('the safe graze band is 25 percent narrower than the prior expanded band', () => {
+  const game = createGame();
+  startRound(game);
+  game.player.x = 0; game.player.y = .78; game.player.dir = 3; game.player.speed = 0;
+  game.point = null; game.spawnTimer = -100;
+  assert.ok(Math.abs(grazeBounds(game).outer - .569) < .002);
+  game.enemies = [{ id: 91, x: 0, y: 0, vx: 2.4, vy: 0, type: 0,
+    radius: .25, hitW: .5, hitH: .5, near: false }];
+  step(game);
+  assert.equal(game.enemies[0].near, true);
+  assert.equal(game.events.some(event => event.kind === 'near-miss-enter'), true);
+  game.enemies[0].x = 1.2;
+  step(game);
+  assert.equal(game.score, 1);
+  assert.equal(game.events.find(event => event.kind === 'near-miss').grade, 'normal');
+  assert.equal(game.events.find(event => event.kind === 'near-miss').type, 0);
+  assert.equal(game.events.find(event => event.kind === 'near-miss').combo, 1);
+});
+
+test('extreme grazes and every third graze award style currency only at settlement', () => {
+  const game = createGame();
+  startRound(game);
+  game.player.x = 0; game.player.y = .64; game.player.dir = 3;
+  game.point = null; game.spawnTimer = -100;
+  for (let i = 0; i < 3; i++) {
+    game.player.speed = 0;
+    game.enemies = [{ id: i + 1, x: 0, y: 0, vx: 2.4, vy: 0, type: 0,
+      radius: .25, hitW: .5, hitH: .5, near: false }];
+    step(game);
+    assert.equal(game.status, 'playing');
+    game.enemies[0].x = 1.2;
+    step(game);
+  }
+  const grazes = game.events.filter(event => event.kind === 'near-miss');
+  assert.deepEqual(grazes.map(event => event.grade), ['extreme', 'extreme', 'extreme']);
+  assert.deepEqual(grazes.map(event => event.styleDelta), [1, 1, 2]);
+  assert.deepEqual(grazes.map(event => event.combo), [1, 2, 3]);
+  assert.equal(game.score, 3);
+  assert.equal(game.stylePoints, 4);
+  assert.equal(game.totalPoints, 0);
+  game.player.x = 6.5;
+  step(game);
+  for (let i = 0; i < 121; i++) step(game);
+  assert.equal(game.lastStylePoints, 4);
+  assert.equal(game.totalPoints, 7);
+});
+
+test('a stronger skin expands the graze band and multiplies settlement style points', () => {
+  const classic = createGame();
+  const premium = createGame({ unlocked: [0, 11], selectedSkin: 11 });
+  for (const game of [classic, premium]) {
+    startRound(game);
+    game.player.x = 0; game.player.y = .82; game.player.dir = 3; game.player.speed = 0;
+    game.point = null; game.spawnTimer = -100;
+    game.enemies = [{ id: 5, x: 0, y: 0, vx: 2.4, vy: 0, type: 0,
+      radius: .25, hitW: .5, hitH: .5, near: false }];
+    step(game);
+  }
+  assert.equal(classic.enemies[0].near, false);
+  assert.equal(premium.enemies[0].near, true);
+  premium.stylePoints = 20;
+  premium.player.x = 6.5;
+  step(premium);
+  for (let i = 0; i < 121; i++) step(premium);
+  assert.equal(premium.lastStylePoints, 23);
 });
 
 test('death leads to results and banks the score once', () => {
@@ -159,7 +265,7 @@ test('all tutorial stages can be completed without granting currency', () => {
   turn(game); turn(game);
   for (let i = 0; i < 140 && game.tutorial.stage === 1; i++) step(game);
   assert.equal(game.tutorial.stage, 2);
-  for (let i = 0; i < 420 && game.status === 'tutorial'; i++) {
+  for (let i = 0; i < 600 && game.status === 'tutorial'; i++) {
     if (game.player.dir === 0 && game.player.y > 2.2) turn(game);
     if (game.player.dir === 1 && game.player.x > 4) turn(game);
     step(game);
@@ -167,6 +273,7 @@ test('all tutorial stages can be completed without granting currency', () => {
   assert.equal(game.status, 'playing');
   assert.equal(game.tutorialSeen, true);
   assert.equal(game.totalPoints, 0);
+  assert.equal(game.stylePoints, 0);
 });
 
 test('new enemy classes debut as their score thresholds open', () => {
@@ -322,7 +429,7 @@ test('skin movement and enemy hit radius change only within the equipped round',
   neon.point = null; neon.spawnTimer = -100;
   step(neon);
   assert.ok(neon.player.x > base.player.x);
-  assert.ok(Math.abs(neon.player.x / base.player.x - 1.02) < 1e-9);
+  assert.ok(Math.abs(neon.player.x / base.player.x - SKINS[1].speed) < 1e-9);
   for (const game of [base, neon]) {
     startRound(game);
     game.player.x = 0; game.player.y = 0; game.player.dir = 1;
@@ -331,7 +438,8 @@ test('skin movement and enemy hit radius change only within the equipped round',
     step(game);
   }
   assert.equal(base.status, 'playing');
-  assert.equal(neon.status, 'dying');
+  assert.equal(neon.status, 'playing');
+  assert.ok(SKINS[1].hurt < SKINS[0].hurt);
   startTutorial(neon);
   assert.equal(neon.roundSkin, 0);
 });
@@ -342,7 +450,7 @@ test('pickup allowance changes without changing delivery or score rewards', () =
   for (const game of [generous, precise]) {
     startRound(game);
     game.player.x = 0; game.player.y = 0; game.player.speed = 0;
-    game.point = { x: 0, y: .65, kind: 'normal', phase: 'field', returnTimer: 0 };
+  game.point = { x: 0, y: .67, kind: 'normal', phase: 'field', returnTimer: 0 };
     game.spawnTimer = -100;
     step(game);
   }

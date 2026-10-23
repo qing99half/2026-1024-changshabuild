@@ -41,6 +41,10 @@ let voiceBuffers = new Map();
 const voiceLoading = new Map();
 let loading;
 let music;
+let musicFilter;
+let musicGain;
+let musicMood = 'normal';
+let musicFadeTimer;
 let melodicMode = true;
 const activeNotes = [];
 const activeVoices = [];
@@ -116,12 +120,12 @@ export function preloadAudio() {
 
 function random(lo, hi) { return lo + Math.random() * (hi - lo); }
 
-function sample(id, { pitch = 1, gain = 1, duration, style } = {}) {
+function sample(id, { pitch = 1, gain = 1, duration, style, delay = 0 } = {}) {
   try {
     const buffer = buffers.get(id);
     if (!buffer) {
       audioContext();
-      preloadAudio().then(() => { if (buffers.has(id)) sample(id, { pitch, gain, duration, style }); });
+      preloadAudio().then(() => { if (buffers.has(id)) sample(id, { pitch, gain, duration, style, delay }); });
       return;
     }
     const ctx = audioContext();
@@ -131,11 +135,11 @@ function sample(id, { pitch = 1, gain = 1, duration, style } = {}) {
     source.playbackRate.value = pitch;
     volume.gain.value = gain;
     const cutoff = duration || style?.duration;
-    if (cutoff) volume.gain.linearRampToValueAtTime(0.001, ctx.currentTime + cutoff);
+    if (cutoff) volume.gain.linearRampToValueAtTime(0.001, ctx.currentTime + delay + cutoff);
     const cleanup = connectEffect(source, volume, style);
     source.onended = cleanup;
-    source.start();
-    if (cutoff) source.stop(ctx.currentTime + cutoff + .015);
+    source.start(ctx.currentTime + delay);
+    if (cutoff) source.stop(ctx.currentTime + delay + cutoff + .015);
   } catch { /* Audio remains optional. */ }
 }
 
@@ -151,8 +155,7 @@ function note(id, gain = 0.4, offset = 0, style = null, echo = true) {
     const source = ctx.createBufferSource();
     const volume = ctx.createGain();
     source.buffer = buffer;
-    // Original music changes both tempo and pitch during freeze and death.
-    source.playbackRate.value = music?.playbackRate || 1;
+    source.playbackRate.value = 1;
     volume.gain.setValueAtTime(gain, when);
     if (style?.duration) volume.gain.linearRampToValueAtTime(.001, when + style.duration);
     const cleanup = connectEffect(source, volume, style);
@@ -184,7 +187,7 @@ function voice(name, midi, gain = .34, offset = 0, duration = .22) {
     const volume = ctx.createGain();
     source.buffer = buffer;
     const baseRate = Math.pow(2, (midi - VOICE_MIDI[name]) / 12);
-    source.playbackRate.value = baseRate * (music?.playbackRate || 1);
+    source.playbackRate.value = baseRate;
     volume.gain.setValueAtTime(gain * VOICE_GAIN[name], when);
     volume.gain.setValueAtTime(gain * VOICE_GAIN[name], when + Math.max(.03, duration - .04));
     volume.gain.linearRampToValueAtTime(.001, when + duration);
@@ -242,24 +245,22 @@ export function playAudioEvent(kind, event = {}) {
       break;
     case 'deliver':
       if (playSkinVoice(kind, event)) break;
-      if (melodicMode && melodyBuffers.has('turn-middle-left')) note('turn-middle-left', .65, 0, style); // G4
-      else sample(94);
+      sample(94);
       break;
     case 'deliver-turn':
-      sample(99, { pitch: .8, gain: melodicMode ? .5 : 1 });
+      sample(99, { pitch: .8 });
       if (playSkinVoice(kind, event)) break;
-      if (melodicMode) {
-        note('turn-middle-left', .48, 0, style); // G4
-        note('turn-upper-up', .4, MELODY_SIXTEENTH, style); // G5
-      }
       break;
     case 'goal-burst': explode(); break;
     case 'point-spawn': sample(103); break;
     case 'near-miss':
-      if (melodicMode && melodyBuffers.has('turn-upper-right')) note('turn-upper-right', .46); // F5
-      else sample(87);
+      sample(87, { gain: event.grade === 'extreme' ? .44 : .36,
+        pitch: event.grade === 'extreme' ? 1.035 : 1 });
       break;
-    case 'enemy-explode': explode(); break;
+    case 'enemy-explode':
+      if (event.source === 'near-miss') sample(91, { gain: .14, delay: .03 });
+      else explode();
+      break;
     case 'bonus': sample(93); break;
     case 'freeze': sample(93); sample(92, { pitch: .52, gain: .85 }); break;
     case 'bomb': sample(93); sample(88, { gain: .5 }); explode(); break;
@@ -275,11 +276,27 @@ export function startMusic() {
     music ||= new Audio('/assets/audio/music-101.mp3');
     music.loop = true;
     music.volume = .4;
+    music.playbackRate = 1;
+    const ctx = audioContext();
+    if (!musicFilter) {
+      const source = ctx.createMediaElementSource(music);
+      musicFilter = ctx.createBiquadFilter();
+      musicFilter.type = 'lowpass';
+      musicGain = ctx.createGain();
+      source.connect(musicFilter).connect(musicGain).connect(ctx.destination);
+    }
+    clearTimeout(musicFadeTimer);
+    musicFilter.frequency.cancelScheduledValues(ctx.currentTime);
+    musicGain.gain.cancelScheduledValues(ctx.currentTime);
+    musicFilter.frequency.value = 20000;
+    musicGain.gain.value = 1;
+    musicMood = 'normal';
     music.play().catch(() => {});
   } catch { /* Music remains optional. */ }
 }
 
 export function pauseMusic() {
+  clearTimeout(musicFadeTimer);
   if (music) music.pause();
   for (const source of activeNotes.splice(0)) {
     try { source.stop(context.currentTime + 0.01); } catch { /* Already ended. */ }
@@ -289,13 +306,22 @@ export function pauseMusic() {
   }
 }
 
-export function setMusicPitch(pitch) {
-  if (music) music.playbackRate = pitch;
-  if (!context) return;
-  for (const source of activeNotes) {
-    source.playbackRate.setTargetAtTime(pitch, context.currentTime, 0.015);
-  }
-  for (const item of activeVoices) {
-    item.source.playbackRate.setTargetAtTime(item.baseRate * pitch, context.currentTime, .015);
-  }
+export function setMusicAtmosphere(mood) {
+  if (!musicFilter || musicMood === mood) return;
+  musicMood = mood;
+  const now = context.currentTime;
+  musicFilter.frequency.setTargetAtTime(mood === 'freeze' ? 1700 : 20000, now, .12);
+  musicGain.gain.setTargetAtTime(mood === 'freeze' ? .8 : 1, now, .12);
+}
+
+export function fadeOutMusic() {
+  if (!music || music.paused || !musicGain) return;
+  clearTimeout(musicFadeTimer);
+  musicMood = 'dying';
+  const now = context.currentTime;
+  musicFilter.frequency.setTargetAtTime(1100, now, .06);
+  if (musicGain.gain.cancelAndHoldAtTime) musicGain.gain.cancelAndHoldAtTime(now);
+  else musicGain.gain.cancelScheduledValues(now);
+  musicGain.gain.setTargetAtTime(.001, now, .045);
+  musicFadeTimer = setTimeout(() => { if (musicMood === 'dying') music.pause(); }, 240);
 }

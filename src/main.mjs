@@ -1,5 +1,5 @@
 import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
-import { preloadAudio, preloadVoiceSet, playAudioEvent, startMusic, pauseMusic, setMusicPitch, setMelodicMode } from './audio.mjs';
+import { preloadAudio, preloadVoiceSet, playAudioEvent, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode } from './audio.mjs';
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 
 const $ = id => document.getElementById(id);
@@ -43,12 +43,12 @@ let previousTime = 0;
 let accumulator = 0;
 let visualTime = 0;
 let lastStatus = game.status;
-let musicPitch = 1;
 let shake = 0;
 let skinMouthUntil = 0;
 const particles = [];
 const rings = [];
 const labels = [];
+const grazeFlashes = [];
 let skinFeedback = '';
 
 function save() {
@@ -59,8 +59,9 @@ function consumeEvents() {
   for (const event of game.events.splice(0)) {
     playAudioEvent(event.kind, { ...event, skinIndex: game.roundSkin });
     visualEvent(event);
+    if (event.kind === 'die') fadeOutMusic();
     if (event.kind === 'results' || event.kind === 'unlock' || event.kind === 'tutorial-complete') save();
-    if (event.kind === 'tutorial-stage' || event.kind === 'tutorial-retry') syncUI();
+    if (event.kind === 'tutorial-stage' || event.kind === 'tutorial-retry' || event.kind === 'tutorial-demo') syncUI();
     if (event.kind === 'results') pauseMusic();
   }
 }
@@ -84,7 +85,7 @@ function visualEvent(event) {
   const x = event.x ?? game.player?.x ?? 0, y = event.y ?? game.player?.y ?? 0;
   const goalX = game.goal?.x ?? 0, goalY = game.goal?.y ?? 0;
   const skin = activeSkin(game);
-  const scoreEvent = ['deliver', 'deliver-turn', 'near-miss', 'bonus', 'freeze', 'bomb'].includes(event.kind);
+  const scoreEvent = ['deliver', 'deliver-turn', 'bonus', 'freeze', 'bomb'].includes(event.kind);
   if (scoreEvent) labels.push({ x, y, text: event.kind === 'bonus' ? '+2' : '+1', age: 0, life: .75 });
   if (event.kind === 'turn') {
     for (const delay of [0, .1, .2]) ring(x, y, skin.color, delay, .5, 50);
@@ -108,9 +109,24 @@ function visualEvent(event) {
     shake = Math.max(shake, .22);
   }
   if (event.kind === 'enemy-explode') {
-    burst(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6, fxArt.explode, 0, true);
-    ring(x, y, enemyColors[event.type] || '#ffffff', 0, .35, 55);
-    shake = Math.max(shake, .08);
+    const graze = event.source === 'near-miss';
+    if (graze) {
+      burst(x, y, event.grade === 'extreme' ? 14 : 10, 2.7, .32,
+        enemyColors[event.type] || '#ffffff', 4.5, null, .045, false, 'diamond');
+    } else burst(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6, fxArt.explode, 0, true);
+    if (!graze) ring(x, y, enemyColors[event.type] || '#ffffff', 0, .35, 55);
+    shake = Math.max(shake, graze ? .06 : .08);
+  }
+  if (event.kind === 'near-miss') {
+    const extreme = event.grade === 'extreme';
+    const angle = Math.atan2(y - (event.playerY ?? game.player?.y ?? y), x - (event.playerX ?? game.player?.x ?? x));
+    grazeFlashes.push({ x, y, angle, extreme, age: 0, life: .45 });
+    const earned = event.scoreDelta !== 0;
+    labels.push({ x, y, text: earned ? (extreme ? '极限擦肩 +1' : '擦肩 +1') : '擦肩成功', age: -.16,
+      life: .48, color: extreme ? '#fff4bc' : '#f4f4f0', size: extreme ? 26 : 21 });
+    if (event.styleDelta > 0) labels.push({ x, y: y - .3, text: `风格 +${event.styleDelta}`,
+      age: -.23, life: .48, color: '#fff4bc', size: 15 });
+    shake = Math.max(shake, extreme ? .1 : .06);
   }
   if (event.kind === 'reverse') ring(goalX, goalY, '#e46359', 0, .7, 145);
   if (event.kind === 'die') { burst(x, y, 75, 5, 3, skin.color, 8, fxArt.explode); shake = Math.max(shake, .15); }
@@ -147,8 +163,9 @@ function updateVisualEffects(dt) {
       sprite: 'Time-125.png', opacity: .1 });
   }
   for (const r of rings) r.age += dt;
+  for (const flash of grazeFlashes) flash.age += dt;
   for (const label of labels) { label.age += dt; label.y += .55 * dt; }
-  for (const [array, expired] of [[particles, p => p.age >= p.life], [rings, r => r.age >= r.life], [labels, l => l.age >= l.life]]) {
+  for (const [array, expired] of [[particles, p => p.age >= p.life], [rings, r => r.age >= r.life], [labels, l => l.age >= l.life], [grazeFlashes, f => f.age >= f.life]]) {
     for (let i = array.length - 1; i >= 0; i--) if (expired(array[i])) array.splice(i, 1);
   }
 }
@@ -208,12 +225,54 @@ function drawVisualEffects() {
     ctx.globalAlpha = (1 - progress) * .75;
     circle(sx(r.x), sy(r.y), 5 + r.maxRadius * progress, null, r.color, 2.5 * (1 - progress) + .5);
   }
-  ctx.textAlign = 'center'; ctx.font = '900 23px Arial';
+  ctx.textAlign = 'center';
   for (const label of labels) {
+    if (label.age < 0) continue;
     ctx.globalAlpha = Math.max(0, 1 - label.age / label.life);
-    ctx.fillStyle = '#f4f4f0'; ctx.fillText(label.text, sx(label.x), sy(label.y) - 34);
+    ctx.font = `900 ${label.size || 23}px Arial`;
+    ctx.fillStyle = label.color || '#f4f4f0'; ctx.fillText(label.text, sx(label.x), sy(label.y) - 34);
   }
   ctx.restore();
+}
+
+function drawGrazeFlashes() {
+  for (const flash of grazeFlashes) {
+    const age = flash.age;
+    const x = sx(flash.x), y = sy(flash.y);
+    if (age < .16) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(flash.angle + Math.PI / 2);
+      ctx.globalCompositeOperation = 'screen';
+      const power = age < .05 ? 1 - age / .085 : Math.max(0, 1 - (age - .05) / .11);
+      const length = flash.extreme ? 145 : 112;
+      const blade = (offset, scale = 1) => {
+        ctx.save(); ctx.translate(0, offset);
+        ctx.globalAlpha = power * scale;
+        const glow = ctx.createLinearGradient(0, -length, 0, length);
+        glow.addColorStop(0, '#ffffff00'); glow.addColorStop(.5, '#ffffffdd'); glow.addColorStop(1, '#ffffff00');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.moveTo(-3, -length); ctx.lineTo(7, -length * .18);
+        ctx.lineTo(3, length); ctx.lineTo(-7, length * .18); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillRect(-1, -length * .7, 2, length * 1.4);
+        ctx.restore();
+      };
+      blade(0);
+      if (flash.extreme) { ctx.rotate(.42); blade(0, .75); }
+      if (age >= .05) {
+        ctx.globalAlpha = Math.max(0, 1 - (age - .05) / .11) * .65;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(-2, -length * .9, 2, length * 1.8);
+      }
+      ctx.restore();
+    }
+    if (!reducedMotion && age < .11) {
+      ctx.save();
+      ctx.globalAlpha = (flash.extreme ? .23 : .11) * Math.max(0, 1 - age / .11);
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 960, 540);
+      ctx.restore();
+    }
+  }
 }
 
 function syncUI() {
@@ -234,7 +293,8 @@ function syncUI() {
   $('result-score').textContent = game.lastScore;
   $('result-time').textContent = `${game.lastTime.toFixed(2)}s`;
   $('result-best').textContent = game.best;
-  $('result-earned').textContent = `+${game.lastScore} 点`;
+  $('result-earned').textContent = `+${game.lastScore + (game.lastStylePoints || 0)} 点`;
+  $('result-style').textContent = `其中风格奖励 +${game.lastStylePoints || 0} 点`;
   $('result-balance').textContent = game.totalPoints;
   const index = game.selectedSkin;
   const skin = SKINS[index];
@@ -254,7 +314,7 @@ function syncUI() {
   $('skin-description').textContent = revealed ? skinDescriptions[index] : '继续游玩，揭开隐藏球的身份';
   $('skin-traits').hidden = !revealed;
   $('skin-traits').innerHTML = revealed
-    ? `<span>速度 <b>${delta(skin.speed)}</b></span><span>危险圈 <b>${delta(skin.hurt)}</b></span><span>拾取 <b>${delta(skin.pickup)}</b></span>`
+    ? `<span>危险圈 <b>${delta(skin.hurt)}</b></span><span>拾取 <b>${delta(skin.pickup)}</b></span><span>擦肩带 <b>${delta(skin.graze)}</b></span><span>风格收益 <b>${delta(skin.styleBonus)}</b></span>`
     : '';
   $('skin-preview').hidden = !revealed;
   $('skin-buy').hidden = owned || !revealed;
@@ -269,15 +329,13 @@ function play(forceTutorial = false) {
   skinFeedback = '';
   preloadAudio();
   playAudioEvent('menu-click');
-  particles.length = 0; rings.length = 0; labels.length = 0; shake = 0;
+  particles.length = 0; rings.length = 0; labels.length = 0; grazeFlashes.length = 0; shake = 0;
   if (forceTutorial || !game.tutorialSeen) startTutorial(game);
   else startRound(game);
   preloadVoiceSet(activeSkin(game).voice);
-  musicPitch = 1;
   accumulator = 0;
   consumeEvents();
   syncUI();
-  setMusicPitch(1);
   startMusic();
 }
 
@@ -550,7 +608,12 @@ function drawEnemies() {
       const scale = Number.isFinite(enemy.pulseScale) ? enemy.pulseScale / .125 : 1;
       drawArt(sprite, x, y, width * scale, height * scale, alpha);
     } else drawArt(sprite, x, y, width, height, alpha);
-    if (enemy.near) circle(x, y, Math.max(r + 10, 25), null, '#ffffff26', 1.5);
+    if (enemy.near) {
+      const pulse = .25 + .12 * Math.sin(visualTime * 11);
+      ctx.globalAlpha = pulse;
+      circle(x, y, Math.max(r + 8, 23), null, '#e9f7ff', 1.2);
+      ctx.globalAlpha = 1;
+    }
   }
 }
 
@@ -639,7 +702,7 @@ function render() {
     circle(670, 310, 25, '#d65a55');
     ctx.globalAlpha = 1;
   } else {
-    drawGoal(); drawPoint(); drawEnemies(); drawBonuses(); drawPlayer(); drawVisualEffects(); hud();
+    drawGoal(); drawPoint(); drawEnemies(); drawBonuses(); drawPlayer(); drawVisualEffects(); drawGrazeFlashes(); hud();
     if (game.freezeTimer > 0) { ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540); }
     if (game.status === 'dying') {
       ctx.fillStyle = `rgba(235, 75, 67, ${Math.min(.4, game.deathTimer / 5)})`;
@@ -655,12 +718,8 @@ function frame(timestamp) {
   previousTime = timestamp;
   visualTime += elapsed;
   updateVisualEffects(elapsed);
-  if (game.status === 'playing' || game.status === 'dying' || game.status === 'tutorial') {
-    const targetPitch = game.status === 'dying' ? .1 : game.freezeTimer > 0 ? .5 : 1;
-    const speed = game.status === 'dying' ? .6 : targetPitch < musicPitch ? .4 : .6;
-    musicPitch += Math.sign(targetPitch - musicPitch) * Math.min(Math.abs(targetPitch - musicPitch), speed * elapsed);
-    setMusicPitch(musicPitch);
-  }
+  if (game.status === 'playing' || game.status === 'tutorial')
+    setMusicAtmosphere(game.freezeTimer > 0 ? 'freeze' : 'normal');
   if (game.status === 'playing' || game.status === 'dying' || game.status === 'tutorial') {
     accumulator += elapsed;
     let steps = 0;

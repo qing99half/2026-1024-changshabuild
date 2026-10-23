@@ -30,7 +30,13 @@ function hurtRadius(game) { return playerRadius(game.player) * activeSkin(game).
 function pickupDistance(game, targetRadius) {
   return (playerRadius(game.player) + targetRadius) * activeSkin(game).pickup;
 }
-function nearMissRadius(player) { return player.size * 3 * 0.42823535203933716; }
+function nearMissRadius(game) {
+  const inner = hurtRadius(game);
+  const originalOuter = nearMissBaseRadius(game.player);
+  return inner + Math.max(0, originalOuter - inner) * 1.125 * (activeSkin(game).graze ?? 1);
+}
+export function grazeBounds(game) { return { inner: hurtRadius(game), outer: nearMissRadius(game) }; }
+function nearMissBaseRadius(player) { return player.size * 3 * 0.42823535203933716; }
 function goalRadius(goal) { return goal.size * 2.325; }
 
 function emit(game, kind, text = '', detail = {}) {
@@ -64,6 +70,15 @@ function enemyHitsCircle(enemy, circle, padding = 0) {
   return null;
 }
 
+function enemyClearance(enemy, point) {
+  const dynamicRadius = enemy.type === 3 && Number.isFinite(enemy.pulseScale) ? 2 * enemy.pulseScale : enemy.radius;
+  const hasBox = Number.isFinite(enemy.hitW) && Number.isFinite(enemy.hitH) && enemy.type !== 3 && enemy.type !== 5;
+  return Math.min(...enemyParts(enemy).map(part => hasBox
+    ? Math.hypot(Math.max(Math.abs(point.x - part.x) - enemy.hitW / 2, 0),
+      Math.max(Math.abs(point.y - part.y) - enemy.hitH / 2, 0))
+    : Math.hypot(point.x - part.x, point.y - part.y) - dynamicRadius));
+}
+
 export function createGame(saved = {}, seed = 0x1024) {
   const unlocked = Array.isArray(saved.unlocked)
     ? [...new Set([0, ...saved.unlocked.filter(n => Number.isInteger(n) && n >= 0 && n < SKINS.length)])]
@@ -73,6 +88,7 @@ export function createGame(saved = {}, seed = 0x1024) {
   return {
     status: 'menu', seed: seed >>> 0, events: [], toast: null,
     score: 0, lastScore: 0, lastTime: 0, best: Number(saved.best) || 0,
+    stylePoints: 0, lastStylePoints: 0, grazeCombo: 0,
     totalPoints, lifetimePoints: Math.max(Number(saved.lifetimePoints) || 0, totalPoints + priorSpending),
     gamesPlayed: Number(saved.gamesPlayed) || 0,
     selectedSkin: unlocked.includes(saved.selectedSkin) ? saved.selectedSkin : 0,
@@ -119,6 +135,8 @@ export function startRound(game) {
   game.tutorial = null;
   game.events = [];
   game.score = 0;
+  game.stylePoints = 0;
+  game.grazeCombo = 0;
   game.lastTime = 0;
   game.time = 0;
   game.deathTimer = 0;
@@ -162,7 +180,8 @@ function placeTutorialStage(game, stage) {
   game.point = stage === 1 ? { x: -2.5, y: 1.35, kind: 'normal', phase: 'field', returnTimer: 0 } : null;
   game.enemies = stage === 2 ? [{ id: -1, x: 5.8, y: .2, vx: -2.1, vy: 0,
     type: 0, shape: 'EnemySquare', radius: .25, hitW: .5, hitH: .5,
-    near: false, trail: [{ x: 5.8, y: .2, age: 0 }] }] : [];
+    near: false, trail: [{ x: 5.8, y: .2, age: 0 }] }]
+    : [];
   game.bonuses = [];
   game.bombWaves = [];
   game.trail = [];
@@ -171,7 +190,7 @@ function placeTutorialStage(game, stage) {
 
 function advanceTutorial(game) {
   const next = game.tutorial.stage + 1;
-  if (next < 3) placeTutorialStage(game, next);
+  if (next < TUTORIAL_LABELS.length) placeTutorialStage(game, next);
   else {
     game.tutorialSeen = true;
     startRound(game);
@@ -271,6 +290,73 @@ function score(game, value, reason, position = {}) {
   if (game.score >= 3 && game.goalCorner < 0) chooseGoalTarget(game);
 }
 
+function checkGraze(game, enemy, reward = true, previousPlayer = game.player, previousEnemy = enemy) {
+  const player = game.player;
+  const outer = nearMissRadius(game);
+  const inner = hurtRadius(game);
+  const relativeTravel = Math.hypot((player.x - previousPlayer.x) - (enemy.x - previousEnemy.x),
+    (player.y - previousPlayer.y) - (enemy.y - previousEnemy.y));
+  const samples = Math.max(1, Math.ceil(relativeTravel / .06));
+  let touched = false;
+  let closest = Infinity;
+  let qualifyingMode = null;
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    const movingPlayer = { x: previousPlayer.x + (player.x - previousPlayer.x) * t,
+      y: previousPlayer.y + (player.y - previousPlayer.y) * t };
+    const movingEnemy = { ...enemy,
+      x: previousEnemy.x + (enemy.x - previousEnemy.x) * t,
+      y: previousEnemy.y + (enemy.y - previousEnemy.y) * t };
+    if (enemyHitsCircle(movingEnemy, { ...movingPlayer, radius: inner })) {
+      if (reward) die(game, 'enemy');
+      return 'hit';
+    }
+    const clearance = enemyClearance(movingEnemy, movingPlayer);
+    if (clearance < outer) {
+      touched = true;
+      closest = Math.min(closest, clearance);
+      const direction = Math.sign(enemy.vx);
+      const forward = (movingPlayer.x - movingEnemy.x) * direction;
+      const lateral = movingPlayer.y - movingEnemy.y;
+      const perpendicular = (player.dir === 0 || player.dir === 2)
+        && forward > .08 && forward >= Math.abs(lateral) * .25;
+      const headOn = (player.dir === (direction > 0 ? 3 : 1))
+        && Math.abs(lateral) > .08 && Math.abs(forward) <= .12;
+      const mode = perpendicular ? 'perpendicular' : headOn ? 'head-on' : null;
+      if (mode && clearance <= inner + (outer - inner) * .85) qualifyingMode = mode;
+    }
+  }
+  if (touched) {
+    if (!enemy.near) emit(game, 'near-miss-enter', '',
+      { x: enemy.x, y: enemy.y, targetId: enemy.id, type: enemy.type, mode: qualifyingMode });
+    enemy.near = true;
+    enemy.closestClearance = Math.min(enemy.closestClearance ?? Infinity, closest);
+    if (qualifyingMode) enemy.grazeMode = qualifyingMode;
+  }
+  if (enemy.near && enemyClearance(enemy, player) >= outer + .09) {
+    if (!enemy.grazeMode) {
+      enemy.near = false;
+      enemy.closestClearance = undefined;
+      return null;
+    }
+    const grade = enemy.closestClearance <= inner + (outer - inner) * .25 ? 'extreme' : 'normal';
+    enemy.gone = true;
+    if (reward) {
+      game.grazeCombo++;
+      const styleDelta = (grade === 'extreme' ? 1 : 0) + (game.grazeCombo % 3 === 0 ? 1 : 0);
+      game.stylePoints += styleDelta;
+      score(game, 1, 'near-miss', { x: enemy.x, y: enemy.y, playerX: player.x, playerY: player.y,
+        targetId: enemy.id, type: enemy.type, mode: enemy.grazeMode, grade, styleDelta, combo: game.grazeCombo });
+    } else emit(game, 'near-miss', '擦肩成功', { x: enemy.x, y: enemy.y, targetId: enemy.id, type: enemy.type,
+      playerX: player.x, playerY: player.y, mode: enemy.grazeMode,
+      grade, styleDelta: 0, combo: 0, scoreDelta: 0 });
+    emit(game, 'enemy-explode', '', { x: enemy.x, y: enemy.y, type: enemy.type,
+      targetId: enemy.id, source: 'near-miss', grade });
+    return 'completed';
+  }
+  return null;
+}
+
 function chooseGoalTarget(game) {
   const corners = [
     { x: -WORLD.width * 0.4, y: -WORLD.height * 0.35 }, { x: WORLD.width * 0.4, y: -WORLD.height * 0.35 },
@@ -363,10 +449,11 @@ function finishRound(game) {
   game.slowPhase = null;
   game.slowTimer = 0;
   game.lastScore = game.score;
+  game.lastStylePoints = Math.floor(game.stylePoints * (activeSkin(game).styleBonus ?? 1));
   game.lastTime = game.time;
   game.best = Math.max(game.best, game.score);
-  game.totalPoints += game.score;
-  game.lifetimePoints += game.score;
+  game.totalPoints += game.score + game.lastStylePoints;
+  game.lifetimePoints += game.score + game.lastStylePoints;
   game.gamesPlayed++;
   emit(game, 'results');
 }
@@ -397,6 +484,7 @@ export function step(game) {
   game.freezeTimer = Math.max(0, game.freezeTimer - STEP * dtScale);
   game.freezeFxTimer = Math.max(0, game.freezeFxTimer - STEP * dtScale);
   const player = game.player;
+  const previousPlayer = { x: player.x, y: player.y };
   if (player.speed < 0.054) player.speed = Math.min(0.054, player.speed + 0.025 * STEP);
   player.size += player.growth * dtScale;
   const speed = player.speed * dtScale * activeSkin(game).speed;
@@ -468,6 +556,7 @@ export function step(game) {
     }
   }
   for (const enemy of game.enemies) {
+    const previousEnemy = { x: enemy.x, y: enemy.y };
     enemy.age = (enemy.age || 0) + STEP * dtScale;
     if (enemy.type === 3 && Number.isFinite(enemy.pulseScale)) {
       enemy.pulseScale += .002 * (enemy.pulseDirection || 1) * dtScale;
@@ -493,16 +582,7 @@ export function step(game) {
       if (Math.hypot(enemy.x - tail.x, enemy.y - tail.y) >= 0.01) enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
       if (enemy.trail.length > 42) enemy.trail.shift();
     }
-    const hit = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: hurtRadius(game) });
-    if (hit) { die(game, 'enemy'); break; }
-    const close = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: nearMissRadius(player) });
-    const stillClose = enemyHitsCircle(enemy, { x: player.x, y: player.y, radius: nearMissRadius(player) + .09 });
-    if (close) enemy.near = true;
-    else if (enemy.near && !stillClose) {
-      enemy.gone = true;
-      score(game, 1, 'near-miss', { x: enemy.x, y: enemy.y, targetId: enemy.id });
-      emit(game, 'enemy-explode', '', { x: enemy.x, y: enemy.y, type: enemy.type, targetId: enemy.id, source: 'near-miss' });
-    }
+    if (checkGraze(game, enemy, true, previousPlayer, previousEnemy) === 'hit') break;
     const exited = enemy.vx < 0 ? enemy.x < WORLD.left - .5 : enemy.x > WORLD.right + .5;
     if (!enemy.gone && exited) {
       enemy.gone = true;
