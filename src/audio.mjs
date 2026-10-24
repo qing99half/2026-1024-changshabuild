@@ -1,19 +1,17 @@
-import { TURN_BANDS, TURN_MIDI, MELODY_SIXTEENTH, nextMelodyDelay } from './melody.mjs';
+import { TURN_BANDS, MELODY_SIXTEENTH, nextMelodyDelay } from './melody.mjs';
 import { SKINS } from './skins.mjs';
+import { chooseVoicePhrase, normalizeVolumes, VOICE_SAMPLE_MIDI } from './audio-policy.mjs';
 
 // AudioClip references below come from the installed game's AudioManager component.
 // Each WAV is decoded from that game's FSB5 resource without changing its samples.
 const CLIPS = [87, 88, 89, 90, 91, 92, 93, 94, 95, 97, 98, 99, 100, 103];
 const EXPLOSIONS = [91, 97, 90, 95]; // The fifth serialized clip is never selected by Random.Range(0, 4).
 const MELODY_NOTES = TURN_BANDS.flat();
-export const SFX_GAIN_MULTIPLIER = 1.5;
+export const SFX_GAIN_MULTIPLIER = 1;
+export const ORIGINAL_TURN = Object.freeze({ clip: 94, gain: .4, minPitch: .8, maxPitch: .85, voices: 3 });
 const VOICE_SETS = Object.freeze({
   hajimi: ['ha_new', 'ji_new', 'mi_new'],
   dagou: ['da', 'gou', 'jiao']
-});
-const VOICE_MIDI = Object.freeze({
-  ha_new: 72.732, ji_new: 67.5550621928, mi_new: 65.4764132511,
-  da: 71.1950846771, gou: 65.5950930881, jiao: 71.1226079346
 });
 const VOICE_GAIN = Object.freeze({
   ha_new: 1.2834, ji_new: 1.4778, mi_new: 1.4846,
@@ -34,7 +32,10 @@ const SKIN_TONES = Object.freeze([
 ]);
 
 let context;
+let turnBus;
 let effectsBus;
+let musicBus;
+let volumeLevels = normalizeVolumes();
 let buffers = new Map();
 let melodyBuffers = new Map();
 let voiceBuffers = new Map();
@@ -45,27 +46,50 @@ let musicFilter;
 let musicGain;
 let musicMood = 'normal';
 let musicFadeTimer;
-let melodicMode = true;
+let melodicMode = false;
 const activeNotes = [];
 const activeVoices = [];
+const turnSources = Array(ORIGINAL_TURN.voices).fill(null);
+let nextTurnSource = 0;
+const voiceStates = new Map();
+let lastEliminateVoiceAt = -Infinity;
+let lastEliminateSoundAt = -Infinity;
 
 export function setMelodicMode(enabled) { melodicMode = Boolean(enabled); }
+
+export function setVolumeLevels(values) {
+  volumeLevels = normalizeVolumes({ ...volumeLevels, ...values });
+  if (context) {
+    const now = context.currentTime;
+    for (const [bus, key] of [[turnBus, 'turn'], [effectsBus, 'effects'], [musicBus, 'music']]) {
+      bus.gain.cancelScheduledValues(now);
+      if (context.state === 'running') bus.gain.setTargetAtTime(volumeLevels[key] / 100, now, .01);
+      else bus.gain.setValueAtTime(volumeLevels[key] / 100, now);
+    }
+  }
+  return { ...volumeLevels };
+}
 
 function audioContext() {
   if (!context) {
     context = new (window.AudioContext || window.webkitAudioContext)();
+    turnBus = context.createGain();
     effectsBus = context.createGain();
-    effectsBus.gain.value = SFX_GAIN_MULTIPLIER;
-    const limiter = context.createDynamicsCompressor();
-    limiter.threshold.value = -8;
-    limiter.knee.value = 4;
-    limiter.ratio.value = 8;
-    limiter.attack.value = .003;
-    limiter.release.value = .12;
-    effectsBus.connect(limiter).connect(context.destination);
+    musicBus = context.createGain();
+    turnBus.gain.value = volumeLevels.turn / 100;
+    effectsBus.gain.value = SFX_GAIN_MULTIPLIER * volumeLevels.effects / 100;
+    musicBus.gain.value = volumeLevels.music / 100;
+    turnBus.connect(context.destination);
+    effectsBus.connect(context.destination);
+    musicBus.connect(context.destination);
   }
   if (context.state === 'suspended') context.resume();
   return context;
+}
+
+export async function unlockAudio() {
+  const ctx = audioContext();
+  if (ctx.state === 'suspended') await ctx.resume();
 }
 
 export function preloadVoiceSet(voice) {
@@ -76,14 +100,16 @@ export function preloadVoiceSet(voice) {
       const response = await fetch(`/assets/audio/guest/${name}.wav`);
       if (response.ok) voiceBuffers.set(name, await audioContext().decodeAudioData(await response.arrayBuffer()));
     } catch { /* Fall back to the calibrated original note. */ }
-  }));
+  })).then(() => {
+    if (!VOICE_SETS[voice].every(name => voiceBuffers.has(name))) voiceLoading.delete(voice);
+  });
   voiceLoading.set(voice, promise);
   return promise;
 }
 
 function styleFor(event) { return SKIN_TONES[event.skinIndex] || SKIN_TONES[0]; }
 
-function connectEffect(source, volume, style) {
+function connectEffect(source, volume, style, channel = 'effects') {
   let output = source;
   let filter;
   if (style?.filter) {
@@ -93,7 +119,7 @@ function connectEffect(source, volume, style) {
     output.connect(filter);
     output = filter;
   }
-  output.connect(volume).connect(effectsBus);
+  output.connect(volume).connect(channel === 'turn' ? turnBus : effectsBus);
   return () => { source.disconnect(); filter?.disconnect(); volume.disconnect(); };
 }
 
@@ -114,18 +140,24 @@ export function preloadAudio() {
       melodyBuffers.set(id, await audioContext().decodeAudioData(await response.arrayBuffer()));
     } catch { /* The original effect remains available if a derived note fails. */ }
   });
-  loading = Promise.all([...original, ...melodic]);
+  const elimination = (async () => {
+    try {
+      const response = await fetch('/assets/audio/eliminate.wav');
+      if (response.ok) buffers.set('eliminate', await audioContext().decodeAudioData(await response.arrayBuffer()));
+    } catch { /* Use an original explosion if the separate cue cannot load. */ }
+  })();
+  loading = Promise.all([...original, ...melodic, elimination]);
   return loading;
 }
 
 function random(lo, hi) { return lo + Math.random() * (hi - lo); }
 
-function sample(id, { pitch = 1, gain = 1, duration, style, delay = 0 } = {}) {
+function sample(id, { pitch = 1, gain = 1, duration, style, delay = 0, channel = 'effects' } = {}) {
   try {
     const buffer = buffers.get(id);
     if (!buffer) {
       audioContext();
-      preloadAudio().then(() => { if (buffers.has(id)) sample(id, { pitch, gain, duration, style, delay }); });
+      preloadAudio().then(() => { if (buffers.has(id)) sample(id, { pitch, gain, duration, style, delay, channel }); });
       return;
     }
     const ctx = audioContext();
@@ -136,11 +168,34 @@ function sample(id, { pitch = 1, gain = 1, duration, style, delay = 0 } = {}) {
     volume.gain.value = gain;
     const cutoff = duration || style?.duration;
     if (cutoff) volume.gain.linearRampToValueAtTime(0.001, ctx.currentTime + delay + cutoff);
-    const cleanup = connectEffect(source, volume, style);
+    const cleanup = connectEffect(source, volume, style, channel);
     source.onended = cleanup;
     source.start(ctx.currentTime + delay);
     if (cutoff) source.stop(ctx.currentTime + delay + cutoff + .015);
   } catch { /* Audio remains optional. */ }
+}
+
+function originalTurn() {
+  const buffer = buffers.get(ORIGINAL_TURN.clip);
+  if (!buffer) {
+    preloadAudio().then(() => { if (buffers.has(ORIGINAL_TURN.clip)) originalTurn(); });
+    return;
+  }
+  try {
+    const ctx = audioContext();
+    const slot = nextTurnSource;
+    nextTurnSource = (slot + 1) % turnSources.length;
+    try { turnSources[slot]?.stop(); } catch { /* The previous voice may already have ended. */ }
+    const source = ctx.createBufferSource();
+    const volume = ctx.createGain();
+    source.buffer = buffer;
+    source.playbackRate.value = random(ORIGINAL_TURN.minPitch, ORIGINAL_TURN.maxPitch);
+    volume.gain.value = ORIGINAL_TURN.gain;
+    const cleanup = connectEffect(source, volume, null, 'turn');
+    turnSources[slot] = source;
+    source.onended = () => { if (turnSources[slot] === source) turnSources[slot] = null; cleanup(); };
+    source.start();
+  } catch { /* Audio remains optional if the browser denies playback. */ }
 }
 
 function note(id, gain = 0.4, offset = 0, style = null, echo = true) {
@@ -158,7 +213,7 @@ function note(id, gain = 0.4, offset = 0, style = null, echo = true) {
     source.playbackRate.value = 1;
     volume.gain.setValueAtTime(gain, when);
     if (style?.duration) volume.gain.linearRampToValueAtTime(.001, when + style.duration);
-    const cleanup = connectEffect(source, volume, style);
+    const cleanup = connectEffect(source, volume, style, 'turn');
     activeNotes.push(source);
     if (activeNotes.length > 6) {
       const oldest = activeNotes.shift();
@@ -175,23 +230,23 @@ function note(id, gain = 0.4, offset = 0, style = null, echo = true) {
   } catch { /* Audio remains optional. */ }
 }
 
-function voice(name, midi, gain = .34, offset = 0, duration = .22) {
+function voice(name, midi, gain = .34, offset = 0, duration = .22, channel = 'effects', quantize = true) {
   const buffer = voiceBuffers.get(name);
   if (!buffer || !Number.isFinite(midi)) return false;
   try {
     const ctx = audioContext();
-    const gridDelay = music && !music.paused
+    const gridDelay = quantize && music && !music.paused
       ? nextMelodyDelay(music.currentTime, music.playbackRate) : 0;
     const when = ctx.currentTime + gridDelay + offset;
     const source = ctx.createBufferSource();
     const volume = ctx.createGain();
     source.buffer = buffer;
-    const baseRate = Math.pow(2, (midi - VOICE_MIDI[name]) / 12);
+    const baseRate = Math.pow(2, (midi - VOICE_SAMPLE_MIDI[name]) / 12);
     source.playbackRate.value = baseRate;
     volume.gain.setValueAtTime(gain * VOICE_GAIN[name], when);
     volume.gain.setValueAtTime(gain * VOICE_GAIN[name], when + Math.max(.03, duration - .04));
     volume.gain.linearRampToValueAtTime(.001, when + duration);
-    source.connect(volume).connect(effectsBus);
+    source.connect(volume).connect(channel === 'turn' ? turnBus : effectsBus);
     activeVoices.push({ source, baseRate });
     if (activeVoices.length > 3) {
       const oldest = activeVoices.shift();
@@ -208,48 +263,67 @@ function voice(name, midi, gain = .34, offset = 0, duration = .22) {
   } catch { return false; }
 }
 
-function playSkinVoice(kind, event) {
-  const set = VOICE_SETS[SKINS[event.skinIndex]?.voice];
-  if (!set || !set.every(name => voiceBuffers.has(name))) return false;
-  const band = Math.max(0, Math.min(2, event.toneBand ?? 1));
-  if (kind === 'turn') return voice(set[band], TURN_MIDI[band][event.dir], .34);
-  if (kind === 'pickup') return voice(set[2], 74, .36, 0, .25);
-  if (kind === 'deliver' || kind === 'deliver-turn') {
-    const sequence = kind === 'deliver-turn' ? [...set].reverse() : set;
-    const notes = kind === 'deliver-turn' ? [74, 70, 67] : [67, 70, 74];
-    sequence.forEach((name, index) => voice(name, notes[index], .30, index * MELODY_SIXTEENTH, .19));
-    return true;
-  }
-  return false;
+function playRandomSkinVoice(kind, event) {
+  const voiceName = SKINS[event.skinIndex]?.voice;
+  const set = VOICE_SETS[voiceName]?.filter(name => voiceBuffers.has(name));
+  if (!set || set.length < 2) return false;
+  const state = voiceStates.get(voiceName) || {};
+  const phrase = chooseVoicePhrase(kind, set, event, state);
+  if (!phrase) return false;
+  voiceStates.set(voiceName, state);
+  const channel = kind === 'turn' ? 'turn' : 'effects';
+  return phrase.map(note => voice(note.sample, note.midi, note.gain,
+    note.offset * MELODY_SIXTEENTH, note.duration, channel, kind !== 'turn')).some(Boolean);
 }
 
 function explode() { sample(EXPLOSIONS[Math.floor(Math.random() * EXPLOSIONS.length)], { pitch: random(.95, 1.05) }); }
 
+function eliminate() {
+  const now = Date.now();
+  if (now - lastEliminateSoundAt < 80) return;
+  lastEliminateSoundAt = now;
+  if (buffers.has('eliminate')) sample('eliminate', { gain: .7, pitch: random(.96, 1.04) });
+  else preloadAudio().then(() => {
+    if (buffers.has('eliminate')) sample('eliminate', { gain: .7, pitch: random(.96, 1.04) });
+    else explode();
+  });
+}
+
+export function previewEliminate() { eliminate(); }
+
 export function playAudioEvent(kind, event = {}) {
   const style = styleFor(event);
+  const voiceName = melodicMode && SKINS[event.skinIndex]?.voice;
+  const voiceSet = VOICE_SETS[voiceName];
+  const voiceReady = Boolean(voiceSet && voiceSet.filter(name => voiceBuffers.has(name)).length >= 2);
+  const erasure = kind === 'enemy-explode' && ['near-miss', 'bomb'].includes(event.source);
+  if (voiceReady) {
+    if (kind === 'near-miss' || kind === 'goal-burst' || kind === 'point-spawn') return;
+    const voiceKind = erasure ? 'eliminate' : kind;
+    if (voiceKind === 'eliminate') {
+      const now = Date.now();
+      if (now - lastEliminateVoiceAt < 100) return;
+      lastEliminateVoiceAt = now;
+    }
+    if (playRandomSkinVoice(voiceKind, event)) return;
+  }
   switch (kind) {
     case 'turn':
-      if (playSkinVoice(kind, event)) {
-        sample(91, { gain: .09, duration: .025 });
-        break;
-      }
+      if (!melodicMode) { originalTurn(); break; }
       if (melodicMode && melodyBuffers.has(event.toneId)) {
-        sample(91, { gain: .09, duration: .025 }); // immediate original transient
+        sample(91, { gain: .09, duration: .025, channel: 'turn' }); // immediate original transient
         note(event.toneId, .4, 0, style);
-      } else sample(94, { pitch: random(.8, .85), gain: .4, style });
+      } else originalTurn();
       break;
     case 'pickup':
-      if (playSkinVoice(kind, event)) break;
       if (melodicMode && melodyBuffers.has('turn-upper-down')) note('turn-upper-down', .52, 0, style); // D5
       else sample(87, { pitch: random(.95, 1.05) });
       break;
     case 'deliver':
-      if (playSkinVoice(kind, event)) break;
       sample(94);
       break;
     case 'deliver-turn':
       sample(99, { pitch: .8 });
-      if (playSkinVoice(kind, event)) break;
       break;
     case 'goal-burst': explode(); break;
     case 'point-spawn': sample(103); break;
@@ -258,7 +332,7 @@ export function playAudioEvent(kind, event = {}) {
         pitch: event.grade === 'extreme' ? 1.035 : 1 });
       break;
     case 'enemy-explode':
-      if (event.source === 'near-miss') sample(91, { gain: .14, delay: .03 });
+      if (erasure) eliminate();
       else explode();
       break;
     case 'bonus': sample(93); break;
@@ -283,7 +357,7 @@ export function startMusic() {
       musicFilter = ctx.createBiquadFilter();
       musicFilter.type = 'lowpass';
       musicGain = ctx.createGain();
-      source.connect(musicFilter).connect(musicGain).connect(ctx.destination);
+      source.connect(musicFilter).connect(musicGain).connect(musicBus);
     }
     clearTimeout(musicFadeTimer);
     musicFilter.frequency.cancelScheduledValues(ctx.currentTime);

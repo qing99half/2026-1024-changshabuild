@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#29292b">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Righty Tighty XL · 网页玩法原型</title>
+  <title>Righty Tighty 99 · v0.1</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -13,15 +13,15 @@
     <div id="stage" aria-label="游戏场地">
       <canvas id="game" width="960" height="540" aria-label="横屏游戏画面：点击或按空格使圆球转向"></canvas>
       <button id="pause" class="icon-button" type="button" aria-label="暂停游戏">Ⅱ</button>
+      <div id="developer-badge" class="developer-badge" hidden>DEV · 2000 点已到账</div>
       <section id="menu" class="screen" aria-labelledby="menu-title">
         <div class="menu-content">
           <div class="eyebrow">ONE BUTTON ARCADE</div>
-          <h1 id="menu-title"><img class="brand-logo" src="/assets/original/TITLE_MAINLOGO-158.png" alt="RIGHTY TIGHTY XL"></h1>
+          <h1 id="menu-title"><img class="brand-logo" src="/assets/title-logo-99.svg" alt="RIGHTY TIGHTY 99"></h1>
           <p class="lead">每按一次，转向 90°。拾取光点，送回圆环。</p>
           <button id="start" class="primary" type="button">开始游戏 <span>↗</span></button>
           <button id="replay-tutorial" class="text-button tutorial-replay" type="button">练习操作</button>
-          <button id="motion-toggle" class="text-button motion-toggle" type="button">动态效果：标准</button>
-          <button id="audio-toggle" class="text-button audio-toggle" type="button">常规球转向：原声音律</button>
+          <button id="settings-from-menu" class="text-button" type="button">设置</button>
           <p class="hint">空格 / 鼠标点击 / 触屏点击：转向 · Esc：暂停</p>
         </div>
         <div class="menu-side">
@@ -49,20 +49,13 @@
         </div>
         <button id="tutorial-skip" type="button">跳过教程 →</button>
       </section>
-      <section id="debug-panel" class="debug-panel" hidden aria-label="特效测试面板">
-        <button type="button" data-debug="points">+2</button>
-        <button type="button" data-debug="freeze">冻结</button>
-        <button type="button" data-debug="bomb">炸弹</button>
-        <button type="button" data-debug="turn">反转点</button>
-        <button type="button" data-debug="gallery">七敌展示</button>
-        <button type="button" data-debug="wall">撞墙碎裂</button>
-      </section>
       <section id="paused" class="screen compact" hidden aria-labelledby="paused-title">
         <div class="modal">
           <div class="eyebrow">TAKE A BREATH</div>
           <h2 id="paused-title">已暂停</h2>
           <p>下一次转向，可能就是破纪录的开始。</p>
           <button id="resume" class="primary" type="button">继续游戏 <span>↗</span></button>
+          <button id="settings-from-pause" class="text-button" type="button">设置</button>
           <button id="menu-from-pause" class="text-button" type="button">返回菜单</button>
         </div>
       </section>
@@ -75,6 +68,32 @@
           <div class="result-reward"><span>本局获得 <strong id="result-earned">+0 点</strong></span><small id="result-style">其中风格奖励 +0 点</small><small>当前余额 <b id="result-balance">0</b></small></div>
           <button id="restart" class="primary" type="button">再玩一次 <span>↗</span></button>
           <button id="menu-from-results" class="text-button" type="button">返回菜单</button>
+        </div>
+      </section>
+      <section id="settings" class="screen compact settings-screen" hidden aria-labelledby="settings-title" role="dialog" aria-modal="true">
+        <div class="modal settings-modal">
+          <div class="eyebrow">GAME SETTINGS</div>
+          <h2 id="settings-title">设置</h2>
+          <div class="settings-switches">
+            <button id="motion-toggle" class="settings-toggle" type="button">动态效果：标准</button>
+            <button id="audio-toggle" class="settings-toggle" type="button">音效模式：原版</button>
+          </div>
+          <div class="volume-controls">
+            <label class="volume-control" for="volume-turn">
+              <span>转向音量 <output id="volume-turn-value" for="volume-turn">100%</output></span>
+              <input id="volume-turn" type="range" min="50" max="200" step="1" value="100">
+            </label>
+            <label class="volume-control" for="volume-effects">
+              <span>特效音量 <output id="volume-effects-value" for="volume-effects">100%</output></span>
+              <input id="volume-effects" type="range" min="50" max="200" step="1" value="100">
+            </label>
+            <label class="volume-control" for="volume-music">
+              <span>背景音乐 <output id="volume-music-value" for="volume-music">100%</output></span>
+              <input id="volume-music" type="range" min="50" max="200" step="1" value="100">
+            </label>
+          </div>
+          <button id="preview-eliminate" class="text-button" type="button">试听消除音效 ♪</button>
+          <button id="settings-close" class="primary settings-close" type="button">返回 <span>↗</span></button>
         </div>
       </section>
     </div>

@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createGame, startRound, turn } from '../src/core.mjs';
 import { turnTone, TURN_BANDS, TURN_MIDI, MELODY_SIXTEENTH, MUSIC_BEAT_PHASE, nextMelodyDelay } from '../src/melody.mjs';
-import { SFX_GAIN_MULTIPLIER } from '../src/audio.mjs';
+import { ORIGINAL_TURN, SFX_GAIN_MULTIPLIER } from '../src/audio.mjs';
 
 test('a turn snapshots its post-turn heading and position into the audio event', () => {
   const game = createGame();
@@ -36,8 +37,11 @@ test('all twelve direction-position judgements have calibrated original-sample W
   assert.equal(turnTone(-1.29, 3).id, 'turn-lower-left');
 });
 
-test('trigger effects use the requested gain and guest voice assets are present', () => {
-  assert.equal(SFX_GAIN_MULTIPLIER, 1.5);
+test('the original turn effect uses the unpacked clip and playback parameters', () => {
+  assert.equal(SFX_GAIN_MULTIPLIER, 1);
+  assert.deepEqual(ORIGINAL_TURN, { clip: 94, gain: .4, minPitch: .8, maxPitch: .85, voices: 3 });
+  const digest = createHash('sha256').update(readFileSync(new URL('../assets/audio/clip-94.wav', import.meta.url))).digest('hex');
+  assert.equal(digest, 'b01df3996f347da45830da4587731c025b2ec03de21aa91da17b0173d3fe8243');
   for (const name of ['ha_new', 'ji_new', 'mi_new', 'da', 'gou', 'jiao'])
     assert.ok(existsSync(new URL(`../assets/audio/guest/${name}.wav`, import.meta.url)), name);
 });

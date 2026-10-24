@@ -2,19 +2,19 @@ import { turnTone } from './melody.mjs';
 import { SKINS, activeSkin, isSkinRevealed } from './skins.mjs';
 
 export const STEP = 1 / 60;
-export const ENEMY_TRAIL_LIFE = 0.62;
+export const ENEMY_TRAIL_LIFE = 0.65;
 // The Unity camera has a 3.84 world-unit orthographic half-height; 16:9 gives this field.
 export const WORLD = Object.freeze({ width: 13.653333333333334, height: 7.68, left: -6.826666666666667, right: 6.826666666666667, top: 3.84, bottom: -3.84 });
 export const ENEMY_UNLOCK_SCORES = Object.freeze([0, 2, 4, 6, 8, 10, 12]);
 export const CLASSIC_ENEMY_UNLOCK_SCORES = Object.freeze([0, 5, 10, 15, 20, 25, 30]);
 export const ENEMY_TYPES = Object.freeze([
-  { name: 'EnemySquare', width: .5, height: .5, radius: .25, trailLife: .5, warningOffset: 2.11 },
-  { name: 'EnemySquare2', width: 1.0465, height: .4945, radius: .53, trailLife: .65, warningOffset: 2.41 },
-  { name: 'EnemySquare3', width: .4922, height: .9085, radius: .46, trailLife: .5, warningOffset: 2.09 },
-  { name: 'EnemySquare4', width: .5, height: .5, radius: .25, trailLife: .5, warningOffset: 2.11 },
-  { name: 'EnemySquare5', width: .5, height: .5, radius: .25, trailLife: .5, warningOffset: 2.21 },
-  { name: 'EnemySquare6', width: .0625, height: .0625, radius: .03125, trailLife: .5, warningOffset: 2.11 },
-  { name: 'EnemySquare7', width: .4945, height: .4945, radius: .25, trailLife: .5, warningOffset: 2.1 }
+  { name: 'EnemySquare', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: .49, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
+  { name: 'EnemySquare2', width: 1.0465, height: .4945, radius: .53, trailLife: .65, trailWidth: .488, warningOffset: 2.41, warningScaleX: 5.5, warningScaleY: .55 },
+  { name: 'EnemySquare3', width: .4922, height: .9085, radius: .46, trailLife: .5, trailWidth: .901, warningOffset: 2.09, warningScaleX: 5.5, warningScaleY: .55 },
+  { name: 'EnemySquare4', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: .49, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
+  { name: 'EnemySquare5', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: 0, warningOffset: 2.21, warningScaleX: 10, warningScaleY: 8 },
+  { name: 'EnemySquare6', width: .0625, height: .0625, radius: .03125, trailLife: .5, trailWidth: .5, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
+  { name: 'EnemySquare7', width: .4945, height: .4945, radius: .25, trailLife: .5, trailWidth: .485, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 }
 ]);
 
 function random(game) {
@@ -51,10 +51,6 @@ function circleHitsBox(circle, box, halfWidth, halfHeight) {
 }
 
 function enemyParts(enemy) {
-  if (enemy.type === 6 && Number.isFinite(enemy.split)) {
-    return [{ x: enemy.x, y: enemy.y - enemy.split, part: 'down' },
-      { x: enemy.x, y: enemy.y + enemy.split, part: 'up' }];
-  }
   return [{ x: enemy.x, y: enemy.y, part: 'body' }];
 }
 
@@ -95,7 +91,7 @@ export function createGame(saved = {}, seed = 0x1024) {
     roundSkin: 0,
     unlocked, tutorialSeen: saved.tutorialSeen === undefined ? Number(saved.gamesPlayed) > 0 : Boolean(saved.tutorialSeen),
     tutorial: null, introducedEnemies: [], nextEnemyId: 1,
-    classicSpawns: Boolean(saved.classicSpawns), freezeFxTimer: 0,
+    classicSpawns: Boolean(saved.classicSpawns), developerMode: Boolean(saved.developerMode), freezeFxTimer: 0,
     time: 0, deathTimer: 0, freezeTimer: 0, slowTimer: 0, slowPhase: null, timeScale: 1,
     player: null, goal: null, point: null, enemies: [], bonuses: [], bombWaves: [], trail: [],
     spawnTimer: 0, spawned: 0, nextBonusAt: 7, pointCount: 0, nextTurnPointAt: 8,
@@ -105,8 +101,17 @@ export function createGame(saved = {}, seed = 0x1024) {
 
 export function snapshotProgress(game) {
   return { best: game.best, totalPoints: game.totalPoints, lifetimePoints: game.lifetimePoints,
-    gamesPlayed: game.gamesPlayed,
+    gamesPlayed: game.gamesPlayed, developerMode: game.developerMode,
     selectedSkin: game.selectedSkin, unlocked: [...game.unlocked], tutorialSeen: game.tutorialSeen };
+}
+
+export function activateDeveloperMode(game) {
+  if (game.developerMode) return false;
+  game.developerMode = true;
+  game.totalPoints += 2000;
+  game.lifetimePoints += 2000;
+  emit(game, 'developer-mode', '开发者模式已开启 · +2000 点');
+  return true;
 }
 
 export function skinCost(index) { return SKINS[index]?.cost ?? Infinity; }
@@ -147,7 +152,7 @@ export function startRound(game) {
   game.timeScale = 1;
   game.player = { x: 0, y: -2.65, dir: 0, speed: 0, size: 0.425, growth: 0.0001, clockwise: true, carrying: false };
   game.goal = { x: 0, y: -2.65, size: 0.375 };
-  game.point = { x: 0, y: 2.75, kind: 'normal', phase: 'field', returnTimer: 0 };
+  game.point = { x: 0, y: 2.75, kind: 'normal', phase: 'field', returnTimer: 0, age: 0 };
   game.enemies = [];
   game.bonuses = [];
   game.bombWaves = [];
@@ -177,7 +182,7 @@ function placeTutorialStage(game, stage) {
   game.player = { x: -2.5, y: stage === 0 ? -1.6 : -1.8, dir: 0, speed: .035,
     size: .425, growth: 0, clockwise: true, carrying: false };
   game.goal = { x: -2.5, y: -1.8, size: .375 };
-  game.point = stage === 1 ? { x: -2.5, y: 1.35, kind: 'normal', phase: 'field', returnTimer: 0 } : null;
+  game.point = stage === 1 ? { x: -2.5, y: 1.35, kind: 'normal', phase: 'field', returnTimer: 0, age: 0 } : null;
   game.enemies = stage === 2 ? [{ id: -1, x: 5.8, y: .2, vx: -2.1, vy: 0,
     type: 0, shape: 'EnemySquare', radius: .25, hitW: .5, hitH: .5,
     near: false, trail: [{ x: 5.8, y: .2, age: 0 }] }]
@@ -211,6 +216,7 @@ export function skipTutorial(game) {
 }
 
 function stepTutorial(game) {
+  if (game.point) game.point.age = (game.point.age || 0) + STEP;
   const guide = game.tutorial;
   guide.elapsed += STEP;
   const player = game.player;
@@ -219,8 +225,8 @@ function stepTutorial(game) {
   else if (player.dir === 1) player.x += move;
   else if (player.dir === 2) player.y -= move;
   else player.x -= move;
-  game.trail.push({ x: player.x, y: player.y, ttl: .25 });
-  game.trail = game.trail.filter(p => (p.ttl -= STEP) > 0).slice(-30);
+  game.trail.push({ x: player.x, y: player.y, ttl: 1 });
+  game.trail = game.trail.filter(p => (p.ttl -= STEP) > 0).slice(-80);
   if (Math.abs(player.x) > 6.25 || Math.abs(player.y) > 3.3) {
     guide.failures++;
     placeTutorialStage(game, guide.stage);
@@ -407,7 +413,7 @@ function nextPoint(game) {
   }
   const viewX = between(game, game.pointSpawnLow, game.pointSpawnHigh);
   const viewY = between(game, game.score <= 10 ? 0.5 : game.pointSpawnLow, game.pointSpawnHigh);
-  game.point = { x: (viewX - 0.5) * WORLD.width, y: (viewY - 0.5) * WORLD.height, kind: special ? 'turn' : 'normal', phase: 'field', returnTimer: 0 };
+  game.point = { x: (viewX - 0.5) * WORLD.width, y: (viewY - 0.5) * WORLD.height, kind: special ? 'turn' : 'normal', phase: 'field', returnTimer: 0, age: 0 };
   emit(game, 'point-spawn');
 }
 
@@ -429,18 +435,31 @@ function spawnEnemy(game) {
   const type = debut >= 0 ? debut : Math.floor(random(game) * pool);
   if (!game.introducedEnemies.includes(type)) game.introducedEnemies.push(type);
   const config = ENEMY_TYPES[type];
-  game.enemies.push({ id: game.nextEnemyId++, x, y, vx: -side * 2.4, vy: 0, type,
-    shape: config.name, radius: config.radius, hitW: config.width, hitH: config.height,
-    split: type === 6 ? .276 : undefined, pulseScale: type === 3 ? .125 : undefined,
-    pulseDirection: 1, fadeAlpha: 1, fadeDirection: -1, age: 0, near: false,
-    trail: [{ x, y, age: 0 }] });
+  const groupId = type === 6 ? game.nextEnemyId : null;
+  for (const member of type === 6 ? [-1, 1] : [0]) {
+    const memberY = y + member * .276;
+    game.enemies.push({ id: game.nextEnemyId++, groupId, pairMember: member,
+      x, y: memberY, vx: -side * 2.4, vy: 0, type,
+      shape: config.name, radius: config.radius, hitW: config.width, hitH: config.height,
+      pulseScale: type === 3 ? .125 : undefined,
+      pulseDirection: 1, fadeAlpha: 1, fadeDirection: -1, age: 0, near: false,
+      trail: [{ x, y: memberY, age: 0 }] });
+  }
 }
 
 function die(game, reason) {
   if (game.status !== 'playing') return;
+  const enemies = game.enemies.filter(enemy => !enemy.gone).map(enemy =>
+    ({ x: enemy.x, y: enemy.y, type: enemy.type, id: enemy.id }));
   game.status = 'dying';
   game.deathTimer = 2;
-  emit(game, 'die', reason === 'wall' ? '撞到边界' : '撞到障碍', { x: game.player.x, y: game.player.y });
+  game.enemies = [];
+  game.bonuses = [];
+  game.point = null;
+  game.bombWaves = [];
+  game.trail = [];
+  emit(game, 'die', reason === 'wall' ? '撞到边界' : '撞到障碍',
+    { x: game.player.x, y: game.player.y, enemies });
 }
 
 function finishRound(game) {
@@ -481,6 +500,7 @@ export function step(game) {
   game.slowTimer = game.slowPhase ? 1 : 0;
   const dtScale = game.timeScale;
   game.time += STEP * dtScale;
+  if (game.point) game.point.age = (game.point.age || 0) + STEP * dtScale;
   game.freezeTimer = Math.max(0, game.freezeTimer - STEP * dtScale);
   game.freezeFxTimer = Math.max(0, game.freezeFxTimer - STEP * dtScale);
   const player = game.player;
@@ -492,8 +512,8 @@ export function step(game) {
   else if (player.dir === 1) player.x += speed;
   else if (player.dir === 2) player.y -= speed;
   else player.x -= speed;
-  game.trail.push({ x: player.x, y: player.y, ttl: 0.25 });
-  if (game.trail.length > 30) game.trail.shift();
+  game.trail.push({ x: player.x, y: player.y, ttl: 1 });
+  if (game.trail.length > 80) game.trail.shift();
   game.trail = game.trail.filter(p => (p.ttl -= STEP) > 0);
   if (Math.abs(player.x) > 6.42 || Math.abs(player.y) > 3.48) {
     die(game, 'wall');
@@ -517,10 +537,14 @@ export function step(game) {
 
   if (game.point?.phase === 'field' && distance(player, game.point) < pickupDistance(game, 1.95 * 0.15)) {
     game.point.phase = 'carried';
+    game.point.displayX = player.x;
+    game.point.displayY = player.y;
     player.carrying = true;
     emit(game, 'pickup', '把光点送回圆环', { x: player.x, y: player.y });
   }
   if (game.point?.phase === 'carried') {
+    game.point.displayX = player.x;
+    game.point.displayY = player.y;
     game.point.x = player.x;
     game.point.y = player.y;
     if (distance(player, game.goal) < playerRadius(player) + goalRadius(game.goal)) {
@@ -570,14 +594,14 @@ export function step(game) {
     }
     enemy.trail ??= [{ x: enemy.x, y: enemy.y, age: 0 }];
     for (const point of enemy.trail) point.age += STEP;
-    enemy.trail = enemy.trail.filter(point => point.age < ENEMY_TRAIL_LIFE);
+    enemy.trail = enemy.trail.filter(point => point.age < (ENEMY_TYPES[enemy.type]?.trailLife || ENEMY_TRAIL_LIFE));
     if (game.freezeTimer <= 0) {
       if (!enemy.trail.length) enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
       enemy.x += enemy.vx * STEP * dtScale;
       enemy.y += enemy.vy * STEP * dtScale;
-      if (enemy.type === 6 && Number.isFinite(enemy.split) && Math.abs(enemy.x) < 2.4) {
-        enemy.split = Math.min(1.25, enemy.split + .6 * STEP * dtScale);
-      }
+      if (enemy.type === 6 && enemy.pairMember
+        && (enemy.vx < 0 ? enemy.x <= .54 : enemy.x >= .54))
+        enemy.y += enemy.pairMember * .6 * STEP * dtScale;
       const tail = enemy.trail.at(-1);
       if (Math.hypot(enemy.x - tail.x, enemy.y - tail.y) >= 0.01) enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
       if (enemy.trail.length > 42) enemy.trail.shift();

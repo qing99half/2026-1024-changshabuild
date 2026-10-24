@@ -1,6 +1,7 @@
-import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
-import { preloadAudio, preloadVoiceSet, playAudioEvent, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode } from './audio.mjs';
+import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, activateDeveloperMode, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
+import { preloadAudio, preloadVoiceSet, unlockAudio, playAudioEvent, previewEliminate, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode, setVolumeLevels } from './audio.mjs';
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
+import { normalizeVolumes } from './audio-policy.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -9,19 +10,18 @@ const stage = $('stage');
 const colors = SKINS.map(skin => skin.color);
 const skinNames = SKINS.map(skin => skin.name);
 const skinDescriptions = [
-  '原版圆环 · 清脆音色', '双线光轨 · 明亮短音', '暖色火星 · 柔和短音',
-  '紫色电弧 · 轻微回声', '断续光点 · 干脆敲击', '环绕光圈 · 节拍回声',
-  '几何碎片 · 短促音色', '绕行光点 · 圆润低音', '像素方块 · 颗粒音色',
-  '青柠星芒 · 明亮回声', '猫爪粒子 · 哈吉米语音', '声波扩散 · 大狗叫语音'
+  '原版圆环', '双线光轨', '暖色火星', '紫色电弧', '断续光点',
+  '环绕光圈', '几何碎片', '绕行光点', '像素方块', '青柠星芒',
+  '猫爪粒子', '声波扩散'
 ];
 const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba4d44', '#b9bdbf'];
 const enemyArt = ['EnemySquare-129.png', 'EnemySquare2-128.png', 'EnemySquare3-131.png', 'EnemySquare4-137.png', 'EnemySquare5-115.png', 'GoalZone1-136.png', 'EnemySquare7-134.png'];
 const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 'warning4-122.png', 'warning5-126.png', 'warning-118.png', 'warning7-150.png'];
-const fxArt = { arrow: 'texture-ArrowTrail-2-51.png', explode: 'texture-EnemyExplode-71.png', point: 'GoalZone1-136.png' };
+const fxArt = { explode: 'texture-EnemyExplode-71.png', point: 'GoalZone1-136.png', pulse: 'pulse-138.png' };
 const bonusArt = { points: 'Plus2-142.png', freeze: 'Time-125.png', bomb: 'Bomb-132.png' };
 const skinArt = SKINS.map(skin => skin.art);
 const artUrl = file => file.startsWith('/') ? file : `/assets/original/${file}`;
-const artFiles = ['BackCircle-154.png', 'GoalZone-133.png', 'pointTurn02-124.png', ...enemyArt, ...warningArt,
+const artFiles = ['BackCircle-154.png', 'GoalZone-133.png', 'pointTurn02-124.png', 'pointTurn-130.png', ...enemyArt, ...warningArt,
   ...Object.values(fxArt), ...Object.values(bonusArt), ...skinArt].filter(Boolean);
 const art = new Map();
 for (const file of new Set(artFiles)) {
@@ -29,16 +29,22 @@ for (const file of new Set(artFiles)) {
   image.src = artUrl(file);
   art.set(file, image);
 }
-const debugMode = new URLSearchParams(location.search).has('debug');
-const storageKey = debugMode ? 'righty-web-debug-progress-v1' : 'righty-web-progress-v1';
+const storageKey = 'righty-web-progress-v1';
 let saved = {};
 try { saved = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch { /* Browsers with disabled storage still play. */ }
 const game = createGame({ ...saved, classicSpawns: new URLSearchParams(location.search).get('mode') === 'original' });
 let reducedMotion = false;
 try { reducedMotion = localStorage.getItem('righty-reduced-motion') === 'true'; } catch { /* Local settings are optional. */ }
-let melodicAudio = true;
-try { melodicAudio = localStorage.getItem('righty-melodic-audio') !== 'false'; } catch { /* Local settings are optional. */ }
+let melodicAudio = false;
+try { melodicAudio = localStorage.getItem('righty-audio-mode-v2') === 'extended'; } catch { /* Local settings are optional. */ }
 setMelodicMode(melodicAudio);
+const volumeStorageKey = 'righty-volume-levels-v1';
+let volumeLevels = normalizeVolumes();
+try { volumeLevels = normalizeVolumes(JSON.parse(localStorage.getItem(volumeStorageKey) || '{}')); }
+catch { /* Invalid local settings use the current 100% mix. */ }
+setVolumeLevels(volumeLevels);
+let settingsOpen = false;
+let settingsReturnFocus = null;
 let previousTime = 0;
 let accumulator = 0;
 let visualTime = 0;
@@ -47,9 +53,16 @@ let shake = 0;
 let skinMouthUntil = 0;
 const particles = [];
 const rings = [];
+const scorePulses = [];
+const pointTrailParticles = [];
+const turnExplosions = [];
 const labels = [];
 const grazeFlashes = [];
+const bonusParticleClocks = new Map();
+let pointTrailSource = null;
+let pointTrailClock = 0;
 let skinFeedback = '';
+let developerShortcutUntil = 0;
 
 function save() {
   try { localStorage.setItem(storageKey, JSON.stringify(snapshotProgress(game))); } catch { /* Private browsing. */ }
@@ -60,7 +73,7 @@ function consumeEvents() {
     playAudioEvent(event.kind, { ...event, skinIndex: game.roundSkin });
     visualEvent(event);
     if (event.kind === 'die') fadeOutMusic();
-    if (event.kind === 'results' || event.kind === 'unlock' || event.kind === 'tutorial-complete') save();
+    if (event.kind === 'results' || event.kind === 'unlock' || event.kind === 'tutorial-complete' || event.kind === 'developer-mode') save();
     if (event.kind === 'tutorial-stage' || event.kind === 'tutorial-retry' || event.kind === 'tutorial-demo') syncUI();
     if (event.kind === 'results') pauseMusic();
   }
@@ -77,8 +90,27 @@ function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, d
   }
 }
 
+function shatter(x, y, count, speed, lifetime, color, radius) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = speed * (.45 + Math.random() * .75);
+    particles.push({ x, y, vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
+      gravity: 9.81, age: 0, life: lifetime, color, radius: radius * (.55 + Math.random()),
+      sprite: fxArt.explode, tintSprite: true, rotation: angle });
+  }
+}
+
 function ring(x, y, color, delay = 0, life = .5, maxRadius = 45) {
   rings.push({ x, y, color, age: -delay, life, maxRadius });
+}
+
+function originalTurnPulse(x, y, color) {
+  for (const delay of [0, .1, .2]) rings.push({ x, y, color, age: -delay, life: .5, originalPulse: true });
+}
+
+function scorePulse() {
+  const count = reducedMotion ? 7 : 23;
+  for (let i = 0; i < count; i++) scorePulses.push({ age: -i / 30, life: .75 });
 }
 
 function visualEvent(event) {
@@ -87,14 +119,13 @@ function visualEvent(event) {
   const skin = activeSkin(game);
   const scoreEvent = ['deliver', 'deliver-turn', 'bonus', 'freeze', 'bomb'].includes(event.kind);
   if (scoreEvent) labels.push({ x, y, text: event.kind === 'bonus' ? '+2' : '+1', age: 0, life: .75 });
-  if (event.kind === 'turn') {
-    for (const delay of [0, .1, .2]) ring(x, y, skin.color, delay, .5, 50);
-  }
+  if ((event.scoreDelta || 0) > 0) scorePulse();
+  if (event.kind === 'turn') originalTurnPulse(x, y, skin.color);
   if (event.kind === 'pickup') { burst(x, y, 30, 2, .75, '#f4f4f0', 7, fxArt.point); shake = Math.max(shake, .1); }
   if (event.kind === 'deliver') { burst(x, y, 30, 2, .75, '#ffffff', 7, fxArt.point); shake = Math.max(shake, .1); }
   if (event.kind === 'deliver-turn') {
-    for (const delay of [0, .07, .14]) ring(goalX, goalY, '#d75c54', delay, .5, 85);
-    burst(x, y, 50, .75, .5, '#c7544d', 6, fxArt.point);
+    turnExplosions.push({ x: goalX, y: goalY, age: 0, scale: .25, direction: game.player?.clockwise ? 1 : -1 });
+    burst(goalX, goalY, 125, .75, .5, '#c7544d', 6, fxArt.point);
   }
   if (event.kind === 'goal-burst') {
     burst(x, y, 30, 2, .75, '#ffffff', 7, fxArt.point);
@@ -109,13 +140,8 @@ function visualEvent(event) {
     shake = Math.max(shake, .22);
   }
   if (event.kind === 'enemy-explode') {
-    const graze = event.source === 'near-miss';
-    if (graze) {
-      burst(x, y, event.grade === 'extreme' ? 14 : 10, 2.7, .32,
-        enemyColors[event.type] || '#ffffff', 4.5, null, .045, false, 'diamond');
-    } else burst(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6, fxArt.explode, 0, true);
-    if (!graze) ring(x, y, enemyColors[event.type] || '#ffffff', 0, .35, 55);
-    shake = Math.max(shake, graze ? .06 : .08);
+    shatter(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6);
+    shake = Math.max(shake, event.source === 'near-miss' ? .06 : .08);
   }
   if (event.kind === 'near-miss') {
     const extreme = event.grade === 'extreme';
@@ -128,16 +154,20 @@ function visualEvent(event) {
       age: -.23, life: .48, color: '#fff4bc', size: 15 });
     shake = Math.max(shake, extreme ? .1 : .06);
   }
-  if (event.kind === 'reverse') ring(goalX, goalY, '#e46359', 0, .7, 145);
-  if (event.kind === 'die') { burst(x, y, 75, 5, 3, skin.color, 8, fxArt.explode); shake = Math.max(shake, .15); }
+  if (event.kind === 'die') {
+    shatter(x, y, 75, 5, 3, skin.color, 8);
+    for (const enemy of event.enemies || [])
+      shatter(enemy.x, enemy.y, 50, 4, 2, enemyColors[enemy.type] || '#ffffff', 6);
+    shake = Math.max(shake, .15);
+  }
   skinVisualEvent(event.kind, x, y, skin);
 }
 
 function skinVisualEvent(kind, x, y, skin) {
-  if (skin.voice && ['turn', 'pickup', 'deliver', 'deliver-turn'].includes(kind))
+  if (melodicAudio && skin.voice && ['turn', 'pickup', 'deliver', 'deliver-turn'].includes(kind))
     skinMouthUntil = visualTime + .13;
-  if (skin.fx === 'round' || !['turn', 'pickup', 'deliver', 'deliver-turn', 'die'].includes(kind)) return;
-  const count = kind === 'turn' ? 10 : kind === 'pickup' ? 8 : kind === 'die' ? 22 : 16;
+  if (skin.fx === 'round' || !['turn', 'pickup', 'deliver', 'deliver-turn'].includes(kind)) return;
+  const count = kind === 'turn' ? 10 : kind === 'pickup' ? 8 : 16;
   const shape = {
     neon: 'line', spark: 'line', polygon: 'diamond', pixel: 'pixel',
     star: 'star', paws: 'paw', bark: 'wave'
@@ -153,20 +183,69 @@ function skinVisualEvent(kind, x, y, skin) {
     ring(x, y, skin.color, 0, .55, 92);
 }
 
+function emitPointParticle(x, y, scale = 1) {
+  const angle = Math.random() * Math.PI * 2;
+  pointTrailParticles.push({ x: x + Math.cos(angle) * .222 * scale,
+    y: y + Math.sin(angle) * .222 * scale,
+    vx: Math.cos(angle) * scale, vy: Math.sin(angle) * scale,
+    age: 0, life: 1, scale });
+}
+
 function updateVisualEffects(dt) {
   if (game.status === 'paused') return;
   shake = Math.max(0, shake - .004 * 60 * dt);
-  for (const p of particles) { p.age += dt; if (p.age >= 0) { p.x += p.vx * dt; p.y += p.vy * dt; } }
+  for (const p of particles) {
+    p.age += dt;
+    if (p.age >= 0) { p.vy -= (p.gravity || 0) * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  }
   if (game.status === 'playing' && game.freezeFxTimer > 0 && Math.random() < 10 * dt) {
     particles.push({ x: WORLD.left + Math.random() * WORLD.width, y: WORLD.bottom + Math.random() * WORLD.height,
       vx: 0, vy: .2, age: 0, life: 2, color: '#b9eafb', radius: px(1 + Math.random() * .5),
       sprite: 'Time-125.png', opacity: .1 });
   }
   for (const r of rings) r.age += dt;
+  for (const r of scorePulses) r.age += dt;
+  for (const p of pointTrailParticles) { p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  for (const fx of turnExplosions) {
+    fx.age += dt;
+    if (fx.scale < 1.5 && !fx.contracting) fx.scale += .035 * 60 * dt;
+    else { fx.contracting = true; fx.scale -= .035 * 60 * dt; }
+  }
+  if (game.point && game.point.phase !== 'returning') {
+    if (pointTrailSource !== game.point) { pointTrailSource = game.point; pointTrailClock = 0; }
+    pointTrailClock += dt;
+    while (pointTrailClock >= .25) {
+      pointTrailClock -= .25;
+      const point = game.point;
+      const x = point.phase === 'carried' ? (point.displayX ?? point.x) : point.x;
+      const y = point.phase === 'carried' ? (point.displayY ?? point.y) : point.y;
+      emitPointParticle(x, y);
+    }
+  } else pointTrailSource = null;
+  const bonusScale = 43 / px(.6);
+  for (const bonus of game.bonuses) {
+    let clock = (bonusParticleClocks.get(bonus) || 0) + dt;
+    while (clock >= .25) { clock -= .25; emitPointParticle(bonus.x, bonus.y, bonusScale); }
+    bonusParticleClocks.set(bonus, clock);
+  }
+  for (const bonus of bonusParticleClocks.keys())
+    if (!game.bonuses.includes(bonus)) bonusParticleClocks.delete(bonus);
   for (const flash of grazeFlashes) flash.age += dt;
   for (const label of labels) { label.age += dt; label.y += .55 * dt; }
-  for (const [array, expired] of [[particles, p => p.age >= p.life], [rings, r => r.age >= r.life], [labels, l => l.age >= l.life], [grazeFlashes, f => f.age >= f.life]]) {
+  for (const [array, expired] of [[particles, p => p.age >= p.life], [rings, r => r.age >= r.life],
+    [scorePulses, p => p.age >= p.life], [pointTrailParticles, p => p.age >= p.life],
+    [turnExplosions, fx => fx.age >= 3 || fx.scale <= 0], [labels, l => l.age >= l.life],
+    [grazeFlashes, f => f.age >= f.life]]) {
     for (let i = array.length - 1; i >= 0; i--) if (expired(array[i])) array.splice(i, 1);
+  }
+}
+
+function drawScorePulses() {
+  for (const pulse of scorePulses) {
+    if (pulse.age < 0) continue;
+    const t = pulse.age / pulse.life;
+    const alpha = t < .25 ? t / .25 : (1 - t) / .75;
+    drawTintedArt(fxArt.pulse, '#5e5e5e', 480, 270, px(15 * (1 - t)), px(15 * (1 - t)), alpha * .392);
   }
 }
 
@@ -222,8 +301,28 @@ function drawVisualEffects() {
   for (const r of rings) {
     if (r.age < 0) continue;
     const progress = r.age / r.life;
+    if (r.originalPulse) {
+      ctx.globalAlpha = 1;
+      const size = px(1.3 * (.689189136 + .310810864 * progress));
+      const alpha = progress < .476 ? 1 : (1 - progress) / .524;
+      drawTintedArt(fxArt.pulse, r.color, sx(r.x), sy(r.y), size, size, alpha);
+      continue;
+    }
     ctx.globalAlpha = (1 - progress) * .75;
     circle(sx(r.x), sy(r.y), 5 + r.maxRadius * progress, null, r.color, 2.5 * (1 - progress) + .5);
+  }
+  ctx.globalAlpha = 1;
+  for (const fx of turnExplosions) {
+    const arrowImage = art.get('pointTurn-130.png');
+    const pulseImage = art.get(fxArt.pulse);
+    const arrowSize = px((arrowImage?.naturalWidth || 400) / 100 * 1.2 * fx.scale);
+    const pulseSize = px((pulseImage?.naturalWidth || 500) / 100 * .09948128 * fx.scale);
+    ctx.save();
+    ctx.translate(sx(fx.x), sy(fx.y));
+    drawTintedArt(fxArt.pulse, '#ba4d44', 0, 0, pulseSize, pulseSize, .294);
+    ctx.rotate(fx.age * (fx.direction > 0 ? -4 : -5) * 60 * Math.PI / 180);
+    drawArt('pointTurn-130.png', 0, 0, arrowSize, arrowSize, .588 * Math.max(0, 1 - fx.age / 1.2));
+    ctx.restore();
   }
   ctx.textAlign = 'center';
   for (const label of labels) {
@@ -276,6 +375,7 @@ function drawGrazeFlashes() {
 }
 
 function syncUI() {
+  $('settings').hidden = !settingsOpen;
   $('menu').hidden = game.status !== 'menu';
   $('paused').hidden = game.status !== 'paused';
   $('results').hidden = game.status !== 'results';
@@ -321,7 +421,25 @@ function syncUI() {
   $('skin-buy').textContent = game.totalPoints >= cost ? `解锁 · ${cost} 点` : `还差 ${cost - game.totalPoints} 点`;
   $('skin-feedback').textContent = skinFeedback;
   $('motion-toggle').textContent = `动态效果：${reducedMotion ? '减弱' : '标准'}`;
-  $('audio-toggle').textContent = `常规球转向：${melodicAudio ? '原声音律' : '原版'}`;
+  $('audio-toggle').textContent = `音效模式：${melodicAudio ? '扩展音律' : '原版'}`;
+  for (const [key, value] of Object.entries(volumeLevels)) {
+    $(`volume-${key}`).value = value;
+    $(`volume-${key}-value`).textContent = `${value}%`;
+  }
+  $('developer-badge').hidden = !game.developerMode;
+}
+
+function openSettings(button) {
+  settingsReturnFocus = button;
+  settingsOpen = true;
+  syncUI();
+  $('settings-close').focus();
+}
+
+function closeSettings() {
+  settingsOpen = false;
+  syncUI();
+  settingsReturnFocus?.focus();
 }
 
 function play(forceTutorial = false) {
@@ -329,10 +447,13 @@ function play(forceTutorial = false) {
   skinFeedback = '';
   preloadAudio();
   playAudioEvent('menu-click');
-  particles.length = 0; rings.length = 0; labels.length = 0; grazeFlashes.length = 0; shake = 0;
+  particles.length = 0; rings.length = 0; scorePulses.length = 0; pointTrailParticles.length = 0;
+  bonusParticleClocks.clear();
+  turnExplosions.length = 0; labels.length = 0; grazeFlashes.length = 0; pointTrailSource = null;
+  pointTrailClock = 0; shake = 0;
   if (forceTutorial || !game.tutorialSeen) startTutorial(game);
   else startRound(game);
-  preloadVoiceSet(activeSkin(game).voice);
+  if (melodicAudio) preloadVoiceSet(activeSkin(game).voice);
   accumulator = 0;
   consumeEvents();
   syncUI();
@@ -342,6 +463,21 @@ function play(forceTutorial = false) {
 $('start').addEventListener('click', () => play());
 $('restart').addEventListener('click', () => play());
 $('replay-tutorial').addEventListener('click', () => play(true));
+$('settings-from-menu').addEventListener('click', event => openSettings(event.currentTarget));
+$('settings-from-pause').addEventListener('click', event => openSettings(event.currentTarget));
+$('settings-close').addEventListener('click', closeSettings);
+for (const key of ['turn', 'effects', 'music']) {
+  $(`volume-${key}`).addEventListener('input', event => {
+    volumeLevels = setVolumeLevels({ [key]: event.currentTarget.value });
+    $(`volume-${key}-value`).textContent = `${volumeLevels[key]}%`;
+    try { localStorage.setItem(volumeStorageKey, JSON.stringify(volumeLevels)); } catch { /* Local settings are optional. */ }
+  });
+}
+$('preview-eliminate').addEventListener('click', async () => {
+  await unlockAudio();
+  await preloadAudio();
+  previewEliminate();
+});
 $('motion-toggle').addEventListener('click', () => {
   reducedMotion = !reducedMotion;
   if (reducedMotion) shake = 0;
@@ -351,46 +487,13 @@ $('motion-toggle').addEventListener('click', () => {
 $('audio-toggle').addEventListener('click', () => {
   melodicAudio = !melodicAudio;
   setMelodicMode(melodicAudio);
-  try { localStorage.setItem('righty-melodic-audio', String(melodicAudio)); } catch { /* Local settings are optional. */ }
+  try { localStorage.setItem('righty-audio-mode-v2', melodicAudio ? 'extended' : 'original'); } catch { /* Local settings are optional. */ }
   syncUI();
+  if (melodicAudio && isSkinRevealed(game, game.selectedSkin))
+    preloadVoiceSet(SKINS[game.selectedSkin].voice);
   playAudioEvent('menu-click');
 });
 $('tutorial-skip').addEventListener('click', event => { event.stopPropagation(); skipTutorial(game); consumeEvents(); syncUI(); });
-$('debug-panel').hidden = !debugMode;
-for (const button of $('debug-panel').querySelectorAll('[data-debug]')) button.addEventListener('click', event => {
-  event.stopPropagation();
-  if (game.status !== 'playing') startRound(game);
-  game.player.speed = 0;
-  game.spawnTimer = -999;
-  const kind = button.dataset.debug;
-  if (kind === 'wall') {
-    game.enemies = ENEMY_TYPES.map((config, type) => ({ id: 300 + type,
-      x: WORLD.left - .49, y: -3 + type, vx: -2.4, vy: 0, type, shape: config.name,
-      radius: config.radius, hitW: config.width, hitH: config.height,
-      split: type === 6 ? .276 : undefined, pulseScale: type === 3 ? .125 : undefined,
-      pulseDirection: 1, fadeAlpha: 1, fadeDirection: -1, near: false,
-      trail: [{ x: WORLD.left - .49, y: -3 + type, age: 0 }] }));
-  } else if (kind === 'gallery') {
-    game.enemies = ENEMY_TYPES.map((config, type) => ({ id: 100 + type,
-      x: -4.9 + type * 1.55, y: 1.25, vx: 0, vy: 0, type, shape: config.name,
-      radius: config.radius, hitW: config.width, hitH: config.height,
-      split: type === 6 ? .276 : undefined, pulseScale: type === 3 ? .125 : undefined,
-      pulseDirection: 1, fadeAlpha: 1, fadeDirection: -1, near: false, debugGallery: true,
-      trail: [{ x: -4.9 + type * 1.55, y: 1.25, age: 0 }] }));
-  } else if (kind === 'turn') {
-    game.player.x = game.goal.x; game.player.y = game.goal.y;
-    game.player.carrying = true;
-    game.point = { x: game.goal.x, y: game.goal.y, kind: 'turn', phase: 'carried', returnTimer: 0 };
-  } else {
-    if (kind === 'bomb') game.enemies = [1.8, 3.1, 4.5].map((x, id) => ({ id: 200 + id,
-      x: game.player.x + x, y: game.player.y, vx: 0, vy: 0, type: id,
-      shape: ENEMY_TYPES[id].name, radius: ENEMY_TYPES[id].radius,
-      hitW: ENEMY_TYPES[id].width, hitH: ENEMY_TYPES[id].height, near: false,
-      trail: [{ x: game.player.x + x, y: game.player.y, age: 0 }] }));
-    game.bonuses.push({ x: game.player.x, y: game.player.y, vx: 0, kind, radius: .2925 });
-  }
-  step(game); consumeEvents(); syncUI();
-});
 $('resume').addEventListener('click', () => { togglePause(game); startMusic(); syncUI(); });
 $('pause').addEventListener('click', () => { togglePause(game); pauseMusic(); syncUI(); });
 for (const id of ['menu-from-pause', 'menu-from-results']) {
@@ -401,19 +504,20 @@ for (const [id, direction] of [['skin-prev', -1], ['skin-next', 1]]) {
     selectSkin(game, (game.selectedSkin + colors.length + direction) % colors.length);
     skinFeedback = '';
     save(); syncUI(); playAudioEvent('menu-click');
-    if (isSkinRevealed(game, game.selectedSkin)) preloadVoiceSet(SKINS[game.selectedSkin].voice);
+    if (melodicAudio && isSkinRevealed(game, game.selectedSkin)) preloadVoiceSet(SKINS[game.selectedSkin].voice);
   });
 }
 $('skin-preview').addEventListener('click', async () => {
   const index = game.selectedSkin;
-  await preloadVoiceSet(SKINS[index].voice);
+  await unlockAudio();
+  if (melodicAudio) await preloadVoiceSet(SKINS[index].voice);
   if (game.selectedSkin === index && isSkinRevealed(game, index))
     playAudioEvent('turn', { skinIndex: index, toneBand: 1, dir: 1, toneId: 'turn-middle-right' });
 });
 $('skin-buy').addEventListener('click', () => {
   if (buySkin(game)) {
     skinFeedback = `${skinNames[game.selectedSkin]} 已解锁，下一局可使用`;
-    preloadVoiceSet(SKINS[game.selectedSkin].voice);
+    if (melodicAudio) preloadVoiceSet(SKINS[game.selectedSkin].voice);
     consumeEvents(); save(); syncUI();
   } else {
     skinFeedback = `还差 ${skinCost(game.selectedSkin) - game.totalPoints} 点，继续游玩即可解锁`;
@@ -425,6 +529,25 @@ canvas.addEventListener('pointerdown', event => {
   if (turn(game)) consumeEvents();
 });
 window.addEventListener('keydown', event => {
+  if (settingsOpen) {
+    if (event.code === 'Escape') { event.preventDefault(); closeSettings(); }
+    return;
+  }
+  if (event.shiftKey && event.code === 'Tab') {
+    event.preventDefault();
+    developerShortcutUntil = performance.now() + 1200;
+    return;
+  }
+  if (event.code === 'KeyP' && performance.now() <= developerShortcutUntil) {
+    event.preventDefault();
+    developerShortcutUntil = 0;
+    if (activateDeveloperMode(game)) {
+      skinFeedback = '开发者模式已开启 · +2000 点';
+      consumeEvents();
+      syncUI();
+    }
+    return;
+  }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
   if (event.repeat) return;
   if (['Space', 'Enter'].includes(event.code)) {
@@ -527,20 +650,36 @@ function drawGoal() {
 }
 
 function drawPoint() {
-  if (!game.point || game.point.phase === 'carried') return;
-  const point = game.point, x = sx(point.x), y = sy(point.y);
-  const radius = px(.3) + Math.sin(visualTime * 4) * 1.2;
+  for (const particle of pointTrailParticles) {
+    const t = particle.age / particle.life;
+    const alpha = t < .5 ? 1 : (1 - t) * 2;
+    const size = px(.45 * (particle.scale || 1) * (1 - t));
+    drawArt(fxArt.point, sx(particle.x), sy(particle.y), size, size, alpha);
+  }
+  if (!game.point) return;
+  const point = game.point;
+  const x = sx(point.phase === 'carried' ? (point.displayX ?? point.x) : point.x);
+  const y = sy(point.phase === 'carried' ? (point.displayY ?? point.y) : point.y);
+  if (point.phase === 'carried') return;
+  const remaining = point.phase === 'returning' ? Math.max(0, point.returnTimer / .22) : 1;
+  const radius = px(.3) * remaining;
+  drawPointPulse(x, y, point.age ?? game.time, 1, remaining);
   if (point.kind === 'turn') {
     circle(x, y, radius, '#f0f0ee');
-    if (!drawArt('pointTurn02-124.png', x, y, radius * 1.5)) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate((game.player?.clockwise ? -1 : 1) * (point.age || 0) * 2 * 60 * Math.PI / 180);
+    if (game.player?.clockwise) ctx.scale(1, -1);
+    if (!drawArt('pointTurn02-124.png', 0, 0, radius * 1.5)) {
       ctx.fillStyle = '#c8544f';
       for (let i = 0; i < 4; i++) {
-        const angle = i * Math.PI / 2 + visualTime * .7;
-        ctx.beginPath(); ctx.moveTo(x + Math.cos(angle) * radius * .16, y + Math.sin(angle) * radius * .16);
-        ctx.arc(x, y, radius * .65, angle + .12, angle + 1.18);
+        const angle = i * Math.PI / 2;
+        ctx.beginPath(); ctx.moveTo(Math.cos(angle) * radius * .16, Math.sin(angle) * radius * .16);
+        ctx.arc(0, 0, radius * .65, angle + .12, angle + 1.18);
         ctx.closePath(); ctx.fill();
       }
     }
+    ctx.restore();
   } else {
     circle(x + 2, y + 3, radius, '#00000055');
     circle(x, y, radius, '#f1f1f0');
@@ -551,58 +690,76 @@ function drawPoint() {
   }
 }
 
-function drawEnemyTrail(enemy, color, radius, offsetY = 0) {
-  if (!enemy.trail || enemy.trail.length < 2) return;
+function drawPointPulse(x, y, age, scale = 1, alpha = 1) {
+  const progress = age % 1;
+  const pulseAlpha = progress < .7 ? 1 : (1 - progress) / .3;
+  const size = px(1.2 * scale * progress);
+  drawArt(fxArt.pulse, x, y, size, size, pulseAlpha * alpha);
+}
+
+function drawEnemyTrail(enemy, color, config) {
+  if (!config.trailWidth || !enemy.trail || enemy.trail.length < 2) return;
   ctx.save();
-  ctx.strokeStyle = color; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const life = ENEMY_TYPES[enemy.type]?.trailLife || ENEMY_TRAIL_LIFE;
-  for (let i = 1; i < enemy.trail.length; i++) {
-    const previous = enemy.trail[i - 1], current = enemy.trail[i];
-    const freshness = Math.max(0, 1 - (previous.age + current.age) / (2 * life));
-    if (freshness <= 0) continue;
-    ctx.globalAlpha = .18 * freshness;
-    ctx.lineWidth = Math.max(.2, radius * 1.3 * freshness);
-    ctx.beginPath(); ctx.moveTo(sx(previous.x), sy(previous.y + offsetY)); ctx.lineTo(sx(current.x), sy(current.y + offsetY)); ctx.stroke();
-  }
-  for (let i = 3; i < enemy.trail.length - 1; i += 7) {
+  const life = config.trailLife || ENEMY_TRAIL_LIFE;
+  const width = px(config.width * (enemy.type === 5 ? 5 : 1.4));
+  const height = px(config.height * (enemy.type === 5 ? 5 : 1.4));
+  for (let i = enemy.trail.length - 2; i >= 0; i -= 4) {
     const point = enemy.trail[i];
-    const freshness = Math.max(0, 1 - point.age / .6);
+    const freshness = Math.max(0, 1 - point.age / life);
     if (freshness <= 0) continue;
-    ctx.globalAlpha = .28 * freshness;
-    const side = i % 2 ? 1 : -1;
-    drawArt(fxArt.arrow, sx(point.x), sy(point.y + offsetY) + side * radius * .8, 9 * freshness, 9 * freshness);
+    const alpha = .13 * .784 * freshness * (enemy.fadeAlpha ?? 1);
+    const image = enemyArt[enemy.type] || enemyArt[0];
+    if (enemy.type === 5) drawTintedArt(image, color, sx(point.x), sy(point.y), width, height, alpha);
+    else if (!drawArt(image, sx(point.x), sy(point.y), width, height, alpha)) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
+      ctx.fillRect(sx(point.x) - width / 2, sy(point.y) - height / 2, width, height);
+      ctx.globalAlpha = 1;
+    }
   }
   ctx.restore();
 }
 
+function warningScale(initial, age) {
+  let scale = initial;
+  for (let frame = 0; frame < Math.floor(age * 60) && frame < 170; frame++)
+    scale = scale < 11 ? scale + .1 : 0;
+  return scale;
+}
+
+function drawEnemyWarning(enemy, config, y) {
+  const age = enemy.age || 0;
+  const alpha = Math.max(0, 1 - age * .6);
+  if (alpha <= 0) return;
+  const scaleY = warningScale(config.warningScaleY, age);
+  if (scaleY <= 0) return;
+  const file = warningArt[enemy.type];
+  const image = art.get(file);
+  if (!image?.complete || !image.naturalWidth) return;
+  const direction = Math.sign(enemy.vx) || -1;
+  const x = sx(enemy.x + direction * config.warningOffset);
+  const width = px(image.naturalWidth / 100 * config.warningScaleX * .125);
+  const height = px(image.naturalHeight / 100 * scaleY * .125);
+  ctx.save();
+  ctx.translate(x, y);
+  if (direction < 0) ctx.scale(-1, 1);
+  drawArt(file, 0, 0, width, height, alpha);
+  ctx.restore();
+}
+
 function drawEnemies() {
+  if (game.status === 'dying') return;
   for (const enemy of game.enemies) {
     const x = sx(enemy.x), y = sy(enemy.y), r = px(enemy.radius);
     const fill = enemyColors[enemy.type] || enemyColors[0];
     const config = ENEMY_TYPES[enemy.type] || ENEMY_TYPES[0];
-    if (Math.abs(enemy.x) > 6.1 || enemy.debugGallery) {
-      const side = enemy.vx < 0 ? 1 : -1;
-      const galleryWidth = px(config.width * (enemy.type === 5 ? 5 : 1.4));
-      const warningX = enemy.debugGallery ? x + galleryWidth / 2 + 12 : sx(side * 6.28);
-      const remaining = Math.max(0, Math.abs(enemy.x) - 6.1);
-      const flash = .55 + .35 * Math.sin(visualTime * 12);
-      ctx.save(); ctx.translate(warningX, y); if (side < 0) ctx.scale(-1, 1);
-      drawArt(warningArt[enemy.type], 0, 0, enemy.debugGallery ? 28 : 42,
-        enemy.debugGallery ? 28 : 42, enemy.debugGallery ? .9 : flash * Math.min(1, remaining / .25));
-      ctx.restore();
-    }
-    if (enemy.type === 6 && Number.isFinite(enemy.split)) {
-      drawEnemyTrail(enemy, fill, Math.max(r, 14), -enemy.split);
-      drawEnemyTrail(enemy, fill, Math.max(r, 14), enemy.split);
-    } else drawEnemyTrail(enemy, fill, Math.max(r, 14));
+    drawEnemyWarning(enemy, config, y);
+    drawEnemyTrail(enemy, fill, config);
     const sprite = enemyArt[enemy.type] || enemyArt[0];
     const width = px(config.width * (enemy.type === 5 ? 5 : 1.4));
     const height = px(config.height * (enemy.type === 5 ? 5 : 1.4));
     const alpha = enemy.fadeAlpha ?? 1;
-    if (enemy.type === 6) {
-      const split = Number.isFinite(enemy.split) ? enemy.split : 0;
-      for (const offset of [-split, split]) drawArt(sprite, x, sy(enemy.y + offset), width, height, alpha);
-    } else if (enemy.type === 5) {
+    if (enemy.type === 5) {
       drawTintedArt(sprite, '#ba4d44', x, y, width, height, alpha);
     } else if (enemy.type === 3) {
       const scale = Number.isFinite(enemy.pulseScale) ? enemy.pulseScale / .125 : 1;
@@ -620,6 +777,7 @@ function drawEnemies() {
 function drawBonuses() {
   for (const bonus of game.bonuses) {
     const x = sx(bonus.x), y = sy(bonus.y);
+    drawPointPulse(x, y, visualTime, 43 / px(.6));
     if (drawArt(bonusArt[bonus.kind], x, y, 43)) continue;
     circle(x, y, 18, '#f1f1ed', '#333336', 3);
     if (bonus.kind === 'points') {
@@ -639,12 +797,12 @@ function drawBonuses() {
 }
 
 function drawPlayer() {
-  if (!game.player) return;
+  if (!game.player || game.status === 'dying') return;
   const player = game.player, x = sx(player.x), y = sy(player.y), r = px(player.size * .82);
   const skin = activeSkin(game), color = skin.color;
   for (let i = 1; i < game.trail.length; i++) {
     const previous = game.trail[i - 1], current = game.trail[i];
-    const fade = Math.max(0, current.ttl / .25);
+    const fade = Math.max(0, current.ttl / 1);
     ctx.strokeStyle = color + Math.round(fade * 92).toString(16).padStart(2, '0');
     ctx.lineWidth = r * (skin.fx === 'neon' ? .55 : skin.fx === 'dots' ? .4 : 1.2);
     ctx.lineCap = 'round';
@@ -686,7 +844,6 @@ function hud() {
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   if (game.freezeTimer > 0) { ctx.fillStyle = '#a1d7f3'; ctx.font = '900 14px Arial'; ctx.fillText(`FREEZE  ${Math.ceil(game.freezeTimer)}s`, 480, 65); }
-  if (game.slowTimer > 0) { ctx.fillStyle = '#ec827b'; ctx.font = '900 14px Arial'; ctx.fillText('SLOW MOTION', 480, 65); }
   ctx.restore();
 }
 
@@ -694,6 +851,7 @@ function render() {
   ctx.save();
   if (shake > 0 && !reducedMotion) ctx.translate((Math.random() * 2 - 1) * px(shake), (Math.random() * 2 - 1) * px(shake));
   background();
+  drawScorePulses();
   drawBackgroundScore();
   if (game.status === 'menu') {
     ctx.globalAlpha = .25;
@@ -702,12 +860,8 @@ function render() {
     circle(670, 310, 25, '#d65a55');
     ctx.globalAlpha = 1;
   } else {
-    drawGoal(); drawPoint(); drawEnemies(); drawBonuses(); drawPlayer(); drawVisualEffects(); drawGrazeFlashes(); hud();
+    drawGoal(); drawEnemies(); drawBonuses(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes(); hud();
     if (game.freezeTimer > 0) { ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540); }
-    if (game.status === 'dying') {
-      ctx.fillStyle = `rgba(235, 75, 67, ${Math.min(.4, game.deathTimer / 5)})`;
-      ctx.fillRect(0, 0, 960, 540);
-    }
   }
   ctx.restore();
 }
@@ -717,7 +871,7 @@ function frame(timestamp) {
   const elapsed = Math.min((timestamp - previousTime) / 1000, .08);
   previousTime = timestamp;
   visualTime += elapsed;
-  updateVisualEffects(elapsed);
+  updateVisualEffects(elapsed * (game.slowPhase ? game.timeScale : 1));
   if (game.status === 'playing' || game.status === 'tutorial')
     setMusicAtmosphere(game.freezeTimer > 0 ? 'freeze' : 'normal');
   if (game.status === 'playing' || game.status === 'dying' || game.status === 'tutorial') {
@@ -734,4 +888,5 @@ function frame(timestamp) {
 
 syncUI();
 preloadAudio();
+if (melodicAudio) preloadVoiceSet(SKINS[game.selectedSkin].voice);
 requestAnimationFrame(frame);

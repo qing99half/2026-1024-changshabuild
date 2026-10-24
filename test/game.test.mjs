@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, startRound, startTutorial, skipTutorial, step, turn, selectSkin, buySkin, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE, grazeBounds } from '../src/core.mjs';
+import { createGame, startRound, startTutorial, skipTutorial, step, turn, selectSkin, buySkin, activateDeveloperMode, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES, grazeBounds } from '../src/core.mjs';
 import { SKINS, isSkinRevealed } from '../src/skins.mjs';
 
 test('one input turns 90 degrees and four inputs complete a circuit', () => {
@@ -28,6 +28,42 @@ test('a point is scored only after carrying it into the goal', () => {
   assert.equal(game.player.carrying, false);
   assert.equal(game.score, 1);
   assert.equal(game.point.phase, 'returning');
+});
+
+test('the carried point stays centered on the player while its trail continues', () => {
+  const game = createGame();
+  startRound(game);
+  game.player.speed = 0;
+  game.point.x = 0;
+  game.point.y = -.5;
+  game.player.y = -.5;
+  step(game);
+  assert.equal(game.point.phase, 'carried');
+  game.player.x = 2;
+  step(game);
+  assert.equal(game.point.x, 2);
+  assert.equal(game.point.displayX, game.player.x);
+  assert.equal(game.point.displayY, game.player.y);
+  assert.equal(game.point.age > 0, true);
+});
+
+test('the invisible enemy disables both trail layers', () => {
+  assert.equal(ENEMY_TYPES[4].name, 'EnemySquare5');
+  assert.equal(ENEMY_TYPES[4].trailWidth, 0);
+  assert.ok(ENEMY_TYPES.filter((enemy, index) => index !== 4).every(enemy => enemy.trailWidth > 0));
+});
+
+test('developer mode grants exactly 2000 persistent shop points', () => {
+  const game = createGame();
+  assert.equal(activateDeveloperMode(game), true);
+  assert.equal(activateDeveloperMode(game), false);
+  assert.equal(game.totalPoints, 2000);
+  assert.equal(game.lifetimePoints, 2000);
+  const loaded = createGame(snapshotProgress(game));
+  assert.equal(loaded.developerMode, true);
+  assert.equal(activateDeveloperMode(loaded), false);
+  assert.equal(loaded.totalPoints, 2000);
+  assert.equal(isSkinRevealed(loaded, 11), true);
 });
 
 test('special delivery reverses turn direction', () => {
@@ -195,9 +231,29 @@ test('death leads to results and banks the score once', () => {
   for (let i = 0; i < 121; i++) step(game);
   assert.equal(game.status, 'results');
   assert.deepEqual(snapshotProgress(game), { best: 4, totalPoints: 9, lifetimePoints: 9,
-    gamesPlayed: 2, selectedSkin: 0, unlocked: [0], tutorialSeen: true });
+    gamesPlayed: 2, developerMode: false, selectedSkin: 0, unlocked: [0], tutorialSeen: true });
   for (let i = 0; i < 30; i++) step(game);
   assert.equal(game.totalPoints, 9);
+});
+
+test('death snapshots every enemy as an independent shard source before results', () => {
+  const game = createGame();
+  startRound(game);
+  game.enemies = [
+    { id: 41, x: -2, y: -.276, type: 6 },
+    { id: 42, x: -2, y: .276, type: 6 },
+    { id: 43, x: 2, y: 1, type: 1 }
+  ];
+  game.player.x = 6.43;
+  step(game);
+  const deaths = game.events.filter(event => event.kind === 'die');
+  assert.equal(game.status, 'dying');
+  assert.deepEqual(deaths[0].enemies.map(({ id, type }) => [id, type]),
+    [[41, 6], [42, 6], [43, 1]]);
+  assert.equal(game.enemies.length, 0);
+  assert.equal(game.point, null);
+  step(game);
+  assert.equal(game.events.filter(event => event.kind === 'die').length, 1);
 });
 
 test('bonuses grant their distinct rewards', () => {
@@ -233,9 +289,10 @@ test('each enemy crossing the wall emits its own typed explosion', () => {
   const game = createGame();
   startRound(game);
   game.spawnTimer = 0;
-  game.enemies = Array.from({ length: 7 }, (_, type) => ({ id: 300 + type,
-    x: WORLD.left - .49, y: -3 + type, vx: -2.4, vy: 0, type,
-    radius: .25, hitW: .5, hitH: .5, split: type === 6 ? .276 : undefined,
+  game.enemies = Array.from({ length: 8 }, (_, index) => ({ id: 300 + index,
+    type: Math.min(index, 6),
+    x: WORLD.left - .49, y: -3 + index, vx: -2.4, vy: 0,
+    radius: .25, hitW: .5, hitH: .5,
     near: false }));
   step(game);
   const explosions = game.events.filter(event => event.kind === 'enemy-explode' && event.source === 'boundary');
@@ -302,7 +359,7 @@ test('original comparison mode keeps the five-point enemy unlock gaps', () => {
   assert.equal(game.enemies[1].type, 1);
 });
 
-test('wide and dual-body enemies collide using their actual parts', () => {
+test('wide and paired enemies collide using each unit’s own box', () => {
   const game = createGame();
   startRound(game);
   game.player.x = 0; game.player.y = 0;
@@ -312,10 +369,45 @@ test('wide and dual-body enemies collide using their actual parts', () => {
   assert.equal(game.status, 'dying');
   startRound(game);
   game.player.x = 0; game.player.y = .55;
-  game.enemies = [{ x: 0, y: 0, vx: 0, vy: 0, type: 6, radius: .25,
-    hitW: .4945, hitH: .4945, split: .276, near: false }];
+  game.enemies = [{ id: 1, x: 0, y: -.276, vx: 0, vy: 0, type: 6, radius: .25,
+    hitW: .4945, hitH: .4945, pairMember: -1, near: false },
+  { id: 2, x: 0, y: .276, vx: 0, vy: 0, type: 6, radius: .25,
+    hitW: .4945, hitH: .4945, pairMember: 1, near: false }];
   step(game);
   assert.equal(game.status, 'dying');
+});
+
+test('the white pair spawns as two independently moving and removable enemies', () => {
+  const game = createGame();
+  startRound(game);
+  game.player.speed = 0;
+  game.score = 12;
+  game.introducedEnemies = [0, 1, 2, 3, 4, 5];
+  game.spawnTimer = 2;
+  step(game);
+  const pair = game.enemies.filter(enemy => enemy.type === 6);
+  assert.equal(pair.length, 2);
+  assert.notEqual(pair[0].id, pair[1].id);
+  assert.equal(pair[0].groupId, pair[1].groupId);
+  assert.ok(Math.abs(pair[0].y - pair[1].y) > .5);
+  game.player.x = 3;
+  for (const enemy of pair) { enemy.x = .54; enemy.y = enemy.pairMember * .276; enemy.vx = -2.4; }
+  const before = pair.map(enemy => enemy.y);
+  for (let i = 0; i < 90; i++) step(game);
+  assert.ok(pair[0].y < before[0] && pair[1].y > before[1]);
+
+  startRound(game);
+  game.player.speed = 0;
+  game.point = null;
+  game.spawnTimer = -100;
+  game.enemies = [
+    { id: 70, x: 0, y: 1, vx: 0, vy: 0, type: 6, radius: .25, hitW: .4945, hitH: .4945, pairMember: -1, near: false },
+    { id: 71, x: 0, y: -1, vx: 0, vy: 0, type: 6, radius: .25, hitW: .4945, hitH: .4945, pairMember: 1, near: false }
+  ];
+  game.bombWaves = [{ x: 0, y: 1, age: 0 }];
+  step(game);
+  assert.deepEqual(game.enemies.map(enemy => enemy.id), [71]);
+  assert.deepEqual(game.events.filter(event => event.kind === 'enemy-explode').map(event => event.targetId), [70]);
 });
 
 test('reward events keep the contact location and amount', () => {
