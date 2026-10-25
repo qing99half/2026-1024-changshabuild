@@ -76,11 +76,12 @@ function enemyClearance(enemy, point) {
 }
 
 export function createGame(saved = {}, seed = 0x1024) {
-  const unlocked = Array.isArray(saved.unlocked)
-    ? [...new Set([0, ...saved.unlocked.filter(n => Number.isInteger(n) && n >= 0 && n < SKINS.length)])]
-    : [0];
+  const priorUnlocked = Array.isArray(saved.unlocked)
+    ? saved.unlocked.filter(n => Number.isInteger(n) && n >= 0 && n < SKINS.length) : [];
+  const unlocked = [...new Set([0, ...priorUnlocked])];
   const totalPoints = Math.max(0, Number(saved.totalPoints) || 0);
-  const priorSpending = unlocked.reduce((sum, index) => sum + SKINS[index].cost, 0);
+  // The last two skins were previously free; old saves may own them without spending points.
+  const priorSpending = unlocked.reduce((sum, index) => sum + (index < 12 ? SKINS[index].cost : 0), 0);
   return {
     status: 'menu', seed: seed >>> 0, events: [], toast: null,
     score: 0, lastScore: 0, lastTime: 0, best: Number(saved.best) || 0,
@@ -106,11 +107,10 @@ export function snapshotProgress(game) {
 }
 
 export function activateDeveloperMode(game) {
-  if (game.developerMode) return false;
   game.developerMode = true;
   game.totalPoints += 2000;
   game.lifetimePoints += 2000;
-  emit(game, 'developer-mode', '开发者模式已开启 · +2000 点');
+  emit(game, 'developer-mode', '开发者奖励 · +2000 点');
   return true;
 }
 

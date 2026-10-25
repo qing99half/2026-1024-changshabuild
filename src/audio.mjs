@@ -1,6 +1,6 @@
 import { TURN_BANDS, MELODY_SIXTEENTH, nextMelodyDelay } from './melody.mjs';
 import { SKINS } from './skins.mjs';
-import { chooseVoicePhrase, normalizeVolumes, VOICE_SAMPLE_MIDI } from './audio-policy.mjs';
+import { chooseVoicePhrase, chooseKobeClip, KOBE_VOICE_CLIPS, normalizeVolumes, VOICE_SAMPLE_MIDI } from './audio-policy.mjs';
 
 // AudioClip references below come from the installed game's AudioManager component.
 // Each WAV is decoded from that game's FSB5 resource without changing its samples.
@@ -12,6 +12,15 @@ export const ORIGINAL_TURN = Object.freeze({ clip: 94, gain: .4, minPitch: .8, m
 const VOICE_SETS = Object.freeze({
   hajimi: ['ha_new', 'ji_new', 'mi_new'],
   dagou: ['da', 'gou', 'jiao']
+});
+const CHARACTER_SETS = Object.freeze({ 12: ['tes-whip'], 13: KOBE_VOICE_CLIPS });
+const CHARACTER_GAIN = Object.freeze({
+  // At default sliders, the whip's active RMS is about 10% above the TES theme's median short-window RMS.
+  'tes-whip': 1.21, 'kobe-man': .42, 'kobe-mamba-out': .46, 'kobe-what-can-i-say': .54
+});
+const MUSIC_TRACKS = Object.freeze({
+  default: 'assets/audio/music-101.mp3',
+  tes: 'assets/audio/tes-theme.mp3'
 });
 const VOICE_GAIN = Object.freeze({
   ha_new: 1.2834, ji_new: 1.4778, mi_new: 1.4846,
@@ -40,8 +49,12 @@ let buffers = new Map();
 let melodyBuffers = new Map();
 let voiceBuffers = new Map();
 const voiceLoading = new Map();
+const characterBuffers = new Map();
+const characterLoading = new Map();
+let activeKobeVoice = null;
 let loading;
 let music;
+let musicTrack = 'default';
 let musicFilter;
 let musicGain;
 let musicMood = 'normal';
@@ -104,6 +117,20 @@ export function preloadVoiceSet(voice) {
     if (!VOICE_SETS[voice].every(name => voiceBuffers.has(name))) voiceLoading.delete(voice);
   });
   voiceLoading.set(voice, promise);
+  return promise;
+}
+
+export function preloadCharacterAudio(skinIndex) {
+  const set = CHARACTER_SETS[skinIndex];
+  if (!set || set.every(name => characterBuffers.has(name))) return Promise.resolve();
+  if (characterLoading.has(skinIndex)) return characterLoading.get(skinIndex);
+  const promise = Promise.all(set.map(async name => {
+    try {
+      const response = await fetch(`assets/audio/character/${name}.mp3`);
+      if (response.ok) characterBuffers.set(name, await audioContext().decodeAudioData(await response.arrayBuffer()));
+    } catch { /* The standard effect remains available if a supplied clip cannot load. */ }
+  })).finally(() => characterLoading.delete(skinIndex));
+  characterLoading.set(skinIndex, promise);
   return promise;
 }
 
@@ -276,6 +303,35 @@ function playRandomSkinVoice(kind, event) {
     note.offset * MELODY_SIXTEENTH, note.duration, channel, kind !== 'turn')).some(Boolean);
 }
 
+function characterClip(name, channel, quantize = false) {
+  const buffer = characterBuffers.get(name);
+  if (!buffer) return false;
+  try {
+    const ctx = audioContext();
+    const delay = quantize && music && !music.paused
+      ? nextMelodyDelay(music.currentTime, music.playbackRate) : 0;
+    const source = ctx.createBufferSource();
+    const volume = ctx.createGain();
+    source.buffer = buffer;
+    source.playbackRate.value = 1;
+    volume.gain.value = CHARACTER_GAIN[name];
+    source.connect(volume).connect(channel === 'turn' ? turnBus : effectsBus);
+    if (name.startsWith('kobe-')) activeKobeVoice = source;
+    source.onended = () => {
+      if (activeKobeVoice === source) activeKobeVoice = null;
+      source.disconnect(); volume.disconnect();
+    };
+    source.start(ctx.currentTime + delay);
+    return true;
+  } catch { return false; }
+}
+
+function playKobeVoice(kind) {
+  if (!['turn', 'pickup', 'deliver', 'deliver-turn', 'bonus', 'freeze', 'bomb', 'eliminate', 'die'].includes(kind)) return false;
+  if (activeKobeVoice || !KOBE_VOICE_CLIPS.every(name => characterBuffers.has(name))) return false;
+  return characterClip(chooseKobeClip(), kind === 'turn' ? 'turn' : 'effects', true);
+}
+
 function explode() { sample(EXPLOSIONS[Math.floor(Math.random() * EXPLOSIONS.length)], { pitch: random(.95, 1.05) }); }
 
 function eliminate() {
@@ -293,10 +349,24 @@ export function previewEliminate() { eliminate(); }
 
 export function playAudioEvent(kind, event = {}) {
   const style = styleFor(event);
+  const hasUncalibratedMusic = Boolean(SKINS[event.skinIndex]?.music);
   const voiceName = melodicMode && SKINS[event.skinIndex]?.voice;
   const voiceSet = VOICE_SETS[voiceName];
   const voiceReady = Boolean(voiceSet && voiceSet.filter(name => voiceBuffers.has(name)).length >= 2);
   const erasure = kind === 'enemy-explode' && ['near-miss', 'bomb'].includes(event.source);
+  if (kind === 'turn' && event.skinIndex === 12 && characterClip('tes-whip', 'turn')) return;
+  if (event.skinIndex === 12 && kind === 'turn') preloadCharacterAudio(12);
+  if (melodicMode && event.skinIndex === 13) {
+    if (kind === 'near-miss' || kind === 'goal-burst' || kind === 'point-spawn') return;
+    const voiceKind = erasure ? 'eliminate' : kind;
+    if (voiceKind === 'eliminate') {
+      const now = Date.now();
+      if (now - lastEliminateVoiceAt < 100) return;
+      lastEliminateVoiceAt = now;
+    }
+    if (playKobeVoice(voiceKind)) return;
+    if (!KOBE_VOICE_CLIPS.every(name => characterBuffers.has(name))) preloadCharacterAudio(13);
+  }
   if (voiceReady) {
     if (kind === 'near-miss' || kind === 'goal-burst' || kind === 'point-spawn') return;
     const voiceKind = erasure ? 'eliminate' : kind;
@@ -309,14 +379,14 @@ export function playAudioEvent(kind, event = {}) {
   }
   switch (kind) {
     case 'turn':
-      if (!melodicMode) { originalTurn(); break; }
+      if (!melodicMode || hasUncalibratedMusic) { originalTurn(); break; }
       if (melodicMode && melodyBuffers.has(event.toneId)) {
         sample(91, { gain: .09, duration: .025, channel: 'turn' }); // immediate original transient
         note(event.toneId, .4, 0, style);
       } else originalTurn();
       break;
     case 'pickup':
-      if (melodicMode && melodyBuffers.has('turn-upper-down')) note('turn-upper-down', .52, 0, style); // D5
+      if (melodicMode && !hasUncalibratedMusic && melodyBuffers.has('turn-upper-down')) note('turn-upper-down', .52, 0, style); // D5
       else sample(87, { pitch: random(.95, 1.05) });
       break;
     case 'deliver':
@@ -345,9 +415,16 @@ export function playAudioEvent(kind, event = {}) {
   }
 }
 
-export function startMusic() {
+export function startMusic(skinIndex, { restart = false } = {}) {
   try {
-    music ||= new Audio('assets/audio/music-101.mp3');
+    const nextTrack = skinIndex == null ? musicTrack : SKINS[skinIndex]?.music || 'default';
+    music ||= new Audio();
+    if (musicTrack !== nextTrack || !music.getAttribute('src')) {
+      music.pause();
+      music.src = MUSIC_TRACKS[nextTrack] || MUSIC_TRACKS.default;
+      music.load();
+      musicTrack = nextTrack;
+    } else if (restart) music.currentTime = 0;
     music.loop = true;
     music.volume = .4;
     music.playbackRate = 1;
@@ -377,6 +454,10 @@ export function pauseMusic() {
   }
   for (const item of activeVoices.splice(0)) {
     try { item.source.stop(context.currentTime + .01); } catch { /* Already ended. */ }
+  }
+  if (activeKobeVoice) {
+    try { activeKobeVoice.stop(context.currentTime + .01); } catch { /* Already ended. */ }
+    activeKobeVoice = null;
   }
 }
 

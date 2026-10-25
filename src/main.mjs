@@ -1,5 +1,5 @@
 import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, activateDeveloperMode, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
-import { preloadAudio, preloadVoiceSet, unlockAudio, playAudioEvent, previewEliminate, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode, setVolumeLevels } from './audio.mjs';
+import { preloadAudio, preloadVoiceSet, preloadCharacterAudio, unlockAudio, playAudioEvent, previewEliminate, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode, setVolumeLevels } from './audio.mjs';
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 import { normalizeVolumes } from './audio-policy.mjs';
 
@@ -12,7 +12,7 @@ const skinNames = SKINS.map(skin => skin.name);
 const skinDescriptions = [
   '原版圆环', '双线光轨', '暖色火星', '紫色电弧', '断续光点',
   '环绕光圈', '几何碎片', '绕行光点', '像素方块', '青柠星芒',
-  '猫爪粒子', '声波扩散'
+  '猫爪粒子', '声波扩散', '红色圆球 · 白色断开 T · 专属背景曲', '黑棕圆球 · 黄紫 24 号球衣'
 ];
 const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba4d44', '#b9bdbf'];
 const enemyArt = ['EnemySquare-129.png', 'EnemySquare2-128.png', 'EnemySquare3-131.png', 'EnemySquare4-137.png', 'EnemySquare5-115.png', 'GoalZone1-136.png', 'EnemySquare7-134.png'];
@@ -51,11 +51,16 @@ let visualTime = 0;
 let lastStatus = game.status;
 let shake = 0;
 let skinMouthUntil = 0;
+const TES_BASE_SPIN = 120 * Math.PI / 180;
+let tesSpinAngle = 0;
+let tesSpinSpeed = TES_BASE_SPIN;
+let tesParticleClock = 0;
 const particles = [];
 const rings = [];
 const scorePulses = [];
 const pointTrailParticles = [];
 const turnExplosions = [];
+const tesWhips = [];
 const labels = [];
 const grazeFlashes = [];
 const bonusParticleClocks = new Map();
@@ -63,6 +68,38 @@ let pointTrailSource = null;
 let pointTrailClock = 0;
 let skinFeedback = '';
 let developerShortcutUntil = 0;
+
+function resetTesSpin() {
+  tesSpinAngle = 0;
+  tesSpinSpeed = TES_BASE_SPIN;
+  tesParticleClock = 0;
+  tesWhips.length = 0;
+}
+
+function emitTesSpinParticle() {
+  const player = game.player;
+  const angle = Math.random() * Math.PI * 2;
+  const radius = player.size * .82;
+  const tangent = .3 + Math.min(1.2, tesSpinSpeed / TES_BASE_SPIN * .12);
+  particles.push({
+    x: player.x + Math.cos(angle) * radius * .9,
+    y: player.y + Math.sin(angle) * radius * .9,
+    vx: -Math.sin(angle) * tangent + Math.cos(angle) * .15,
+    vy: Math.cos(angle) * tangent + Math.sin(angle) * .15,
+    gravity: 4, age: 0, life: .3 + Math.random() * .2,
+    color: Math.random() < .5 ? '#ffffff' : '#ff3d2b',
+    radius: 1.5 + Math.random(), shape: 'dot'
+  });
+}
+
+function updateTesSpin(seconds) {
+  if (game.status !== 'playing' || game.roundSkin !== 12) return;
+  tesSpinAngle = (tesSpinAngle + tesSpinSpeed * seconds) % (Math.PI * 2);
+  tesSpinSpeed = TES_BASE_SPIN + (tesSpinSpeed - TES_BASE_SPIN) * Math.pow(.99, seconds);
+  const rate = Math.min(12, 2 + 2 * (tesSpinSpeed / TES_BASE_SPIN - 1)) * (reducedMotion ? .3 : 1);
+  tesParticleClock += rate * Math.min(seconds, .08);
+  while (tesParticleClock >= 1) { emitTesSpinParticle(); tesParticleClock--; }
+}
 
 function save() {
   try { localStorage.setItem(storageKey, JSON.stringify(snapshotProgress(game))); } catch { /* Private browsing. */ }
@@ -72,6 +109,11 @@ function consumeEvents() {
   for (const event of game.events.splice(0)) {
     playAudioEvent(event.kind, { ...event, skinIndex: game.roundSkin });
     visualEvent(event);
+    if (event.kind === 'tutorial-complete') {
+      resetTesSpin();
+      if (game.roundSkin === 12 || (melodicAudio && game.roundSkin === 13)) preloadCharacterAudio(game.roundSkin);
+      startMusic(game.roundSkin, { restart: Boolean(activeSkin(game).music) });
+    }
     if (event.kind === 'die') fadeOutMusic();
     if (event.kind === 'results' || event.kind === 'unlock' || event.kind === 'tutorial-complete' || event.kind === 'developer-mode') save();
     if (event.kind === 'tutorial-stage' || event.kind === 'tutorial-retry' || event.kind === 'tutorial-demo') syncUI();
@@ -85,7 +127,8 @@ function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, d
     const angle = Math.random() * Math.PI * 2;
     const velocity = speed * (.45 + Math.random() * .75);
     particles.push({ x, y, vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
-      age: -delay, life: lifetime * (.65 + Math.random() * .55), color,
+      age: -delay, life: lifetime * (.65 + Math.random() * .55),
+      color: Array.isArray(color) ? color[i % color.length] : color,
       radius: radius * (.55 + Math.random()), sprite, tintSprite, shape, rotation: angle });
   }
 }
@@ -95,7 +138,9 @@ function shatter(x, y, count, speed, lifetime, color, radius) {
     const angle = Math.random() * Math.PI * 2;
     const velocity = speed * (.45 + Math.random() * .75);
     particles.push({ x, y, vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
-      gravity: 9.81, age: 0, life: lifetime, color, radius: radius * (.55 + Math.random()),
+      gravity: 9.81, age: 0, life: lifetime,
+      color: Array.isArray(color) ? color[i % color.length] : color,
+      radius: radius * (.55 + Math.random()),
       sprite: fxArt.explode, tintSprite: true, rotation: angle });
   }
 }
@@ -117,6 +162,24 @@ function visualEvent(event) {
   const x = event.x ?? game.player?.x ?? 0, y = event.y ?? game.player?.y ?? 0;
   const goalX = game.goal?.x ?? 0, goalY = game.goal?.y ?? 0;
   const skin = activeSkin(game);
+  if (event.kind === 'turn' && game.status === 'playing' && game.roundSkin === 12) {
+    tesSpinSpeed *= 1.2;
+    const [headingX, headingY] = [[0, 1], [1, 0], [0, -1], [-1, 0]][event.dir];
+    let sideX = headingY * (game.player.clockwise ? 1 : -1);
+    let sideY = -headingX * (game.player.clockwise ? 1 : -1);
+    const radius = game.player.size * .82;
+    let originX = x + sideX * radius * 2.55 - headingX * radius * .2;
+    let originY = y + sideY * radius * 2.55 - headingY * radius * .2;
+    if (originX < WORLD.left + .1 || originX > WORLD.right - .1 ||
+        originY < WORLD.bottom + .1 || originY > WORLD.top - .1) {
+      sideX *= -1; sideY *= -1;
+      originX = x + sideX * radius * 2.55 - headingX * radius * .2;
+      originY = y + sideY * radius * 2.55 - headingY * radius * .2;
+    }
+    tesWhips.push({ originX, originY, sideX, sideY, headingX, headingY,
+      age: 0, life: .32, impact: false });
+    if (tesWhips.length > 2) tesWhips.shift();
+  }
   const scoreEvent = ['deliver', 'deliver-turn', 'bonus', 'freeze', 'bomb'].includes(event.kind);
   if (scoreEvent) labels.push({ x, y, text: event.kind === 'bonus' ? '+2' : '+1', age: 0, life: .75 });
   if ((event.scoreDelta || 0) > 0) scorePulse();
@@ -155,7 +218,7 @@ function visualEvent(event) {
     shake = Math.max(shake, extreme ? .1 : .06);
   }
   if (event.kind === 'die') {
-    shatter(x, y, 75, 5, 3, skin.color, 8);
+    shatter(x, y, 75, 5, 3, skin.shatterColors || skin.color, 8);
     for (const enemy of event.enemies || [])
       shatter(enemy.x, enemy.y, 50, 4, 2, enemyColors[enemy.type] || '#ffffff', 6);
     shake = Math.max(shake, .15);
@@ -167,13 +230,13 @@ function skinVisualEvent(kind, x, y, skin) {
   if (melodicAudio && skin.voice && ['turn', 'pickup', 'deliver', 'deliver-turn'].includes(kind))
     skinMouthUntil = visualTime + .13;
   if (skin.fx === 'round' || !['turn', 'pickup', 'deliver', 'deliver-turn'].includes(kind)) return;
-  const count = kind === 'turn' ? 10 : kind === 'pickup' ? 8 : 16;
+  const count = kind === 'turn' ? (skin.fx === 'tes' ? 3 : 10) : kind === 'pickup' ? 8 : 16;
   const shape = {
     neon: 'line', spark: 'line', polygon: 'diamond', pixel: 'pixel',
-    star: 'star', paws: 'paw', bark: 'wave'
+    star: 'star', paws: 'paw', bark: 'wave', tes: 'line', kobe: 'star'
   }[skin.fx] || 'dot';
   const life = skin.fx === 'ember' || skin.fx === 'orbit' ? .6 : .42;
-  burst(x, y, count, kind === 'turn' ? 1.5 : 2.3, life, skin.color,
+  burst(x, y, count, kind === 'turn' ? 1.5 : 2.3, life, skin.fxColors || skin.color,
     skin.fx === 'dots' ? 2.4 : 4.2, null, 0, false, shape);
   if (kind === 'turn' && ['halo', 'orbit', 'bark'].includes(skin.fx)) {
     ring(x, y, skin.color, .03, .4, skin.fx === 'bark' ? 68 : 45);
@@ -189,6 +252,43 @@ function emitPointParticle(x, y, scale = 1) {
     y: y + Math.sin(angle) * .222 * scale,
     vx: Math.cos(angle) * scale, vy: Math.sin(angle) * scale,
     age: 0, life: 1, scale });
+}
+
+function tesWhipGeometry(whip) {
+  const player = game.player;
+  const radius = player.size * .82;
+  const contact = { x: player.x + whip.sideX * radius * .84,
+    y: player.y + whip.sideY * radius * .84 };
+  const strike = Math.sin(Math.PI / 2 * Math.min(1, whip.age / .13));
+  const recovery = Math.min(1, Math.max(0, (whip.age - .13) / (whip.life - .13)));
+  const reach = .2 + .8 * strike - .18 * Math.sin(Math.PI / 2 * recovery);
+  const tipX = whip.originX + (contact.x - whip.originX) * reach;
+  const tipY = whip.originY + (contact.y - whip.originY) * reach;
+  const bend = whip.age <= .13
+    ? radius * .65 * Math.sin(Math.PI * strike)
+    : radius * .15 * Math.sin(Math.PI * recovery);
+  const points = Array.from({ length: 9 }, (_, index) => {
+    const along = index / 8;
+    const curve = bend * Math.sin(Math.PI * along);
+    return { x: whip.originX + (tipX - whip.originX) * along + whip.headingX * curve,
+      y: whip.originY + (tipY - whip.originY) * along + whip.headingY * curve };
+  });
+  return { points, contact, sideX: whip.sideX, sideY: whip.sideY,
+    headingX: whip.headingX, headingY: whip.headingY, radius };
+}
+
+function emitTesWhipImpact(whip) {
+  const geometry = tesWhipGeometry(whip);
+  const count = reducedMotion ? 2 : 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const scatter = (Math.random() - .5) * 2;
+    particles.push({ x: geometry.contact.x, y: geometry.contact.y,
+      vx: geometry.sideX * (1.5 + Math.random() * 1.5) + geometry.headingX * .8 + scatter * geometry.headingX,
+      vy: geometry.sideY * (1.5 + Math.random() * 1.5) + geometry.headingY * .8 + scatter * geometry.headingY,
+      gravity: 3.5, age: 0, life: .22 + Math.random() * .2,
+      color: i % 2 ? '#ff3d2b' : '#ffffff', radius: 1.5 + Math.random() * 1.5, shape: 'line',
+      rotation: Math.atan2(geometry.sideY, geometry.sideX) });
+  }
 }
 
 function updateVisualEffects(dt) {
@@ -210,6 +310,13 @@ function updateVisualEffects(dt) {
     fx.age += dt;
     if (fx.scale < 1.5 && !fx.contracting) fx.scale += .035 * 60 * dt;
     else { fx.contracting = true; fx.scale -= .035 * 60 * dt; }
+  }
+  for (const whip of tesWhips) {
+    whip.age += dt;
+    if (!whip.impact && whip.age >= .13) {
+      whip.impact = true;
+      if (game.status === 'playing' && game.roundSkin === 12 && game.player) emitTesWhipImpact(whip);
+    }
   }
   if (game.point && game.point.phase !== 'returning') {
     if (pointTrailSource !== game.point) { pointTrailSource = game.point; pointTrailClock = 0; }
@@ -234,7 +341,7 @@ function updateVisualEffects(dt) {
   for (const label of labels) { label.age += dt; label.y += .55 * dt; }
   for (const [array, expired] of [[particles, p => p.age >= p.life], [rings, r => r.age >= r.life],
     [scorePulses, p => p.age >= p.life], [pointTrailParticles, p => p.age >= p.life],
-    [turnExplosions, fx => fx.age >= 3 || fx.scale <= 0], [labels, l => l.age >= l.life],
+    [turnExplosions, fx => fx.age >= 3 || fx.scale <= 0], [tesWhips, whip => whip.age >= whip.life], [labels, l => l.age >= l.life],
     [grazeFlashes, f => f.age >= f.life]]) {
     for (let i = array.length - 1; i >= 0; i--) if (expired(array[i])) array.splice(i, 1);
   }
@@ -414,7 +521,7 @@ function syncUI() {
   $('skin-description').textContent = revealed ? skinDescriptions[index] : '继续游玩，揭开隐藏球的身份';
   $('skin-traits').hidden = !revealed;
   $('skin-traits').innerHTML = revealed
-    ? `<span>危险圈 <b>${delta(skin.hurt)}</b></span><span>拾取 <b>${delta(skin.pickup)}</b></span><span>擦肩带 <b>${delta(skin.graze)}</b></span><span>风格收益 <b>${delta(skin.styleBonus)}</b></span>`
+    ? `<span>移动速度 <b>${delta(skin.speed)}</b></span><span>危险圈 <b>${delta(skin.hurt)}</b></span><span>拾取 <b>${delta(skin.pickup)}</b></span><span>擦肩带 <b>${delta(skin.graze)}</b></span><span>风格收益 <b>${delta(skin.styleBonus)}</b></span>`
     : '';
   $('skin-preview').hidden = !revealed;
   $('skin-buy').hidden = owned || !revealed;
@@ -453,11 +560,13 @@ function play(forceTutorial = false) {
   pointTrailClock = 0; shake = 0;
   if (forceTutorial || !game.tutorialSeen) startTutorial(game);
   else startRound(game);
+  resetTesSpin();
   if (melodicAudio) preloadVoiceSet(activeSkin(game).voice);
+  if (game.roundSkin === 12 || (melodicAudio && game.roundSkin === 13)) preloadCharacterAudio(game.roundSkin);
   accumulator = 0;
   consumeEvents();
   syncUI();
-  startMusic();
+  startMusic(game.roundSkin, { restart: Boolean(activeSkin(game).music) });
 }
 
 $('start').addEventListener('click', () => play());
@@ -491,6 +600,7 @@ $('audio-toggle').addEventListener('click', () => {
   syncUI();
   if (melodicAudio && isSkinRevealed(game, game.selectedSkin))
     preloadVoiceSet(SKINS[game.selectedSkin].voice);
+  if (melodicAudio && game.selectedSkin === 13 && isSkinRevealed(game, 13)) preloadCharacterAudio(13);
   playAudioEvent('menu-click');
 });
 $('tutorial-skip').addEventListener('click', event => { event.stopPropagation(); skipTutorial(game); consumeEvents(); syncUI(); });
@@ -505,12 +615,15 @@ for (const [id, direction] of [['skin-prev', -1], ['skin-next', 1]]) {
     skinFeedback = '';
     save(); syncUI(); playAudioEvent('menu-click');
     if (melodicAudio && isSkinRevealed(game, game.selectedSkin)) preloadVoiceSet(SKINS[game.selectedSkin].voice);
+    if ((game.selectedSkin === 12 || (melodicAudio && game.selectedSkin === 13)) && isSkinRevealed(game, game.selectedSkin))
+      preloadCharacterAudio(game.selectedSkin);
   });
 }
 $('skin-preview').addEventListener('click', async () => {
   const index = game.selectedSkin;
   await unlockAudio();
   if (melodicAudio) await preloadVoiceSet(SKINS[index].voice);
+  if (index === 12 || (melodicAudio && index === 13)) await preloadCharacterAudio(index);
   if (game.selectedSkin === index && isSkinRevealed(game, index))
     playAudioEvent('turn', { skinIndex: index, toneBand: 1, dir: 1, toneId: 'turn-middle-right' });
 });
@@ -518,6 +631,7 @@ $('skin-buy').addEventListener('click', () => {
   if (buySkin(game)) {
     skinFeedback = `${skinNames[game.selectedSkin]} 已解锁，下一局可使用`;
     if (melodicAudio) preloadVoiceSet(SKINS[game.selectedSkin].voice);
+    if (game.selectedSkin === 12 || (melodicAudio && game.selectedSkin === 13)) preloadCharacterAudio(game.selectedSkin);
     consumeEvents(); save(); syncUI();
   } else {
     skinFeedback = `还差 ${skinCost(game.selectedSkin) - game.totalPoints} 点，继续游玩即可解锁`;
@@ -535,14 +649,15 @@ window.addEventListener('keydown', event => {
   }
   if (event.shiftKey && event.code === 'Tab') {
     event.preventDefault();
-    developerShortcutUntil = performance.now() + 1200;
+    if (!event.repeat) developerShortcutUntil = performance.now() + 1200;
     return;
   }
   if (event.code === 'KeyP' && performance.now() <= developerShortcutUntil) {
     event.preventDefault();
+    if (event.repeat) return;
     developerShortcutUntil = 0;
     if (activateDeveloperMode(game)) {
-      skinFeedback = '开发者模式已开启 · +2000 点';
+      skinFeedback = '开发者奖励 · +2000 点';
       consumeEvents();
       syncUI();
     }
@@ -796,6 +911,31 @@ function drawBonuses() {
   }
 }
 
+function drawTesWhips() {
+  if (game.roundSkin !== 12 || !game.player || !['playing', 'paused'].includes(game.status)) return;
+  for (const whip of tesWhips) {
+    const geometry = tesWhipGeometry(whip);
+    const fade = whip.age <= .1 ? 1 : Math.cos(Math.PI / 2 * Math.min(1, (whip.age - .1) / .22));
+    ctx.save();
+    ctx.globalAlpha *= fade;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    geometry.points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(sx(point.x), sy(point.y));
+      else ctx.lineTo(sx(point.x), sy(point.y));
+    });
+    ctx.strokeStyle = '#ff3d2b';
+    ctx.lineWidth = px(geometry.radius * .28);
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = px(geometry.radius * .13);
+    ctx.stroke();
+    circle(sx(geometry.points[0].x), sy(geometry.points[0].y), px(geometry.radius * .14), '#ff3d2b', '#ffffff', 1);
+    ctx.restore();
+  }
+}
+
 function drawPlayer() {
   if (!game.player || game.status === 'dying') return;
   const player = game.player, x = sx(player.x), y = sy(player.y), r = px(player.size * .82);
@@ -818,22 +958,36 @@ function drawPlayer() {
       ctx.lineTo(sx(current.x) + ox, sy(current.y) + oy); ctx.stroke();
     }
     if (i % 4 === 0) {
-      const shape = { polygon: 'diamond', pixel: 'pixel', star: 'star', paws: 'paw', bark: 'wave', spark: 'line' }[skin.fx] || 'dot';
+      const shape = { polygon: 'diamond', pixel: 'pixel', star: 'star', paws: 'paw', bark: 'wave', spark: 'line', tes: 'line', kobe: 'star' }[skin.fx] || 'dot';
       const offset = skin.fx === 'orbit' ? r * .65 : r * .35;
       ctx.globalAlpha = fade * .7;
-      drawSkinParticle({ shape, color, rotation: i * .8 }, sx(current.x) + Math.sin(i * 7.7) * offset,
+      const particleColor = skin.fxColors ? skin.fxColors[i % skin.fxColors.length] : color;
+      drawSkinParticle({ shape, color: particleColor, rotation: i * .8 }, sx(current.x) + Math.sin(i * 7.7) * offset,
         sy(current.y) + Math.cos(i * 5.2) * offset, skin.fx === 'paws' ? 3 : 2.5);
       ctx.globalAlpha = 1;
     }
   }
   circle(x + 2, y + 3, r, '#0000008c');
-  if (!skin.art || !drawArt(skin.art, x, y, r * 2.05)) circle(x, y, r, color);
+  let skinDrawn = false;
+  if (skin.art) {
+    if (game.roundSkin === 12) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(tesSpinAngle);
+      skinDrawn = drawArt(skin.art, 0, 0, r * 2.05);
+      ctx.restore();
+    } else skinDrawn = drawArt(skin.art, x, y, r * 2.05);
+  }
+  if (!skinDrawn) circle(x, y, r, color);
   if (skin.voice && visualTime < skinMouthUntil) {
     ctx.fillStyle = '#543338';
     ctx.beginPath(); ctx.ellipse(x, y + r * .4, r * .15, r * .11, 0, 0, Math.PI * 2); ctx.fill();
   }
   circle(x, y, px(player.size * .85 * skin.hurt), null, color + '30', 1);
-  if (player.carrying) circle(x, y, r * .79, '#f1f1ef', color, 2);
+  if (player.carrying) {
+    if (game.roundSkin === 12) circle(x, y, r * .79, 'rgba(241,241,239,.25)', 'rgba(255,255,255,.75)', 2);
+    else circle(x, y, r * .79, '#f1f1ef', color, 2);
+  }
   if (!player.clockwise) {
     ctx.fillStyle = '#fff'; ctx.font = '900 16px Arial'; ctx.textAlign = 'center'; ctx.fillText('↶', x, y + r + 22);
   }
@@ -860,7 +1014,7 @@ function render() {
     circle(670, 310, 25, '#d65a55');
     ctx.globalAlpha = 1;
   } else {
-    drawGoal(); drawEnemies(); drawBonuses(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes(); hud();
+    drawGoal(); drawEnemies(); drawBonuses(); drawTesWhips(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes(); hud();
     if (game.freezeTimer > 0) { ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540); }
   }
   ctx.restore();
@@ -868,7 +1022,8 @@ function render() {
 
 function frame(timestamp) {
   if (!previousTime) previousTime = timestamp;
-  const elapsed = Math.min((timestamp - previousTime) / 1000, .08);
+  const realElapsed = Math.max(0, (timestamp - previousTime) / 1000);
+  const elapsed = Math.min(realElapsed, .08);
   previousTime = timestamp;
   visualTime += elapsed;
   updateVisualEffects(elapsed * (game.slowPhase ? game.timeScale : 1));
@@ -881,6 +1036,7 @@ function frame(timestamp) {
       step(game); consumeEvents(); accumulator -= STEP; steps++;
     }
   } else accumulator = 0;
+  updateTesSpin(realElapsed);
   if (game.status !== lastStatus) { lastStatus = game.status; syncUI(); }
   render();
   requestAnimationFrame(frame);
@@ -889,4 +1045,6 @@ function frame(timestamp) {
 syncUI();
 preloadAudio();
 if (melodicAudio) preloadVoiceSet(SKINS[game.selectedSkin].voice);
+if (game.selectedSkin === 12 || (melodicAudio && game.selectedSkin === 13))
+  preloadCharacterAudio(game.selectedSkin);
 requestAnimationFrame(frame);

@@ -1,11 +1,42 @@
 {
   "name": "righty-tighty-99",
   "version": "0.1.0",
+  "description": "Righty Tighty 99 desktop arcade game",
+  "author": "qing99half",
   "private": true,
   "type": "module",
+  "main": "desktop/main.cjs",
   "scripts": {
     "build": "node tools/build.mjs",
     "dev": "node server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "desktop": "npm run build && electron .",
+    "package:win": "npm run build && electron-builder --win portable --x64"
+  },
+  "build": {
+    "appId": "com.qing99half.rightytighty99",
+    "productName": "Righty Tighty 99",
+    "directories": {
+      "output": "release"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "files": [
+      "desktop/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.svg",
+      "signExecutable": false
+    },
+    "portable": {
+      "artifactName": "Righty-Tighty-99-v0.1-win-x64.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.18.0"
   }
 }

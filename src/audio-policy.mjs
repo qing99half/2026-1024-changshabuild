@@ -6,6 +6,12 @@ export const VOICE_SAMPLE_MIDI = Object.freeze({
   ha_new: 72.732, ji_new: 67.5550621928, mi_new: 65.4764132511,
   da: 71.1950846771, gou: 65.5950930881, jiao: 71.1226079346
 });
+export const KOBE_VOICE_CLIPS = Object.freeze(['kobe-man', 'kobe-mamba-out', 'kobe-what-can-i-say']);
+
+export function chooseKobeClip(random = Math.random) {
+  return KOBE_VOICE_CLIPS[Math.min(KOBE_VOICE_CLIPS.length - 1,
+    Math.floor(Math.max(0, random()) * KOBE_VOICE_CLIPS.length))];
+}
 
 export function normalizeVolume(value) {
   const number = Number(value);

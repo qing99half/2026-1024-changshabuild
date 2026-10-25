@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { chooseVoicePhrase, normalizeVolume, normalizeVolumes, VOICE_SCALE, VOICE_SAMPLE_MIDI } from '../src/audio-policy.mjs';
+import { chooseVoicePhrase, chooseKobeClip, KOBE_VOICE_CLIPS, normalizeVolume, normalizeVolumes, VOICE_SCALE, VOICE_SAMPLE_MIDI } from '../src/audio-policy.mjs';
+
+test('Kobe voice choice has three equal ranges and no fourth clip', () => {
+  assert.deepEqual(KOBE_VOICE_CLIPS, ['kobe-man', 'kobe-mamba-out', 'kobe-what-can-i-say']);
+  assert.equal(chooseKobeClip(() => 0), 'kobe-man');
+  assert.equal(chooseKobeClip(() => 1 / 3), 'kobe-mamba-out');
+  assert.equal(chooseKobeClip(() => 2 / 3), 'kobe-what-can-i-say');
+  assert.equal(chooseKobeClip(() => .999), 'kobe-what-can-i-say');
+});
 
 test('each sound channel accepts every one-percent step from 50 to 200', () => {
   for (let value = 50; value <= 200; value++)

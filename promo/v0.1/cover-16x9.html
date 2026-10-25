@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, initial-scale=1">
+  <title>Righty Tighty 99 · 16:9 游戏封面</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 1920px; height: 1080px; margin: 0; overflow: hidden; }
+    body { font-family: Arial, "Microsoft YaHei", sans-serif; color: #f3f1ee; }
+    .cover { position: relative; width: 1920px; height: 1080px; overflow: hidden; isolation: isolate;
+      background: radial-gradient(ellipse at 80% 48%, #3e4a52 0, #22282d 30%, transparent 59%),
+        radial-gradient(circle at 17% 83%, #502e31 0, transparent 41%), #15171a; }
+    .cover::before { content: ""; position: absolute; inset: 0; opacity: .22;
+      background: repeating-linear-gradient(0deg, transparent 0 95px, #ffffff0b 96px 97px),
+        repeating-linear-gradient(90deg, transparent 0 95px, #ffffff0b 96px 97px); }
+    .cover::after { content: ""; position: absolute; inset: 0; z-index: 8; pointer-events: none;
+      box-shadow: inset 0 0 140px 45px #08090bd9; }
+    .halo { position: absolute; top: 110px; right: -170px; width: 930px; height: 930px;
+      border: 100px solid #c8564b18; border-radius: 50%; transform: rotate(-21deg); }
+    .trail { position: absolute; z-index: 1; top: 0; left: 0; width: 1920px; height: 1080px; opacity: .68; }
+    .visual { position: absolute; z-index: 2; top: 176px; left: 916px; width: 930px; height: 667px;
+      overflow: hidden; border: 2px solid #ffffff50; border-radius: 10px; transform: rotate(3deg);
+      background: #303236; box-shadow: 0 50px 100px #000b, 0 0 70px #d0615536; }
+    .visual img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 53% center;
+      filter: contrast(1.13) brightness(.94) saturate(1.18); }
+    .visual::after { content: ""; position: absolute; inset: 0;
+      background: linear-gradient(90deg, #14171b66, transparent 25% 85%, #14171b26),
+        linear-gradient(0deg, #14171b66, transparent 35%); box-shadow: inset 0 0 80px #0008; }
+    .edge { position: absolute; z-index: 3; top: 145px; left: 906px; width: 936px; height: 674px;
+      border: 2px solid #d661584d; border-radius: 12px; transform: rotate(-2deg); pointer-events: none; }
+    .orb { position: absolute; z-index: 4; right: 81px; bottom: 114px; width: 110px; height: 110px;
+      border-radius: 50%; background: #dc5d57; box-shadow: inset -11px -14px 0 #9f423c55, 0 0 45px #e7685f78; }
+    .orb::after { content: ""; position: absolute; inset: -28px; border: 3px solid #e0645a75; border-radius: 50%; }
+    .kicker { position: absolute; z-index: 5; top: 93px; left: 100px; color: #e27369;
+      font-size: 29px; font-weight: 900; letter-spacing: .3em; }
+    .version { position: absolute; z-index: 5; top: 85px; right: 95px; padding: 15px 24px;
+      border: 2px solid #f2aca466; border-radius: 5px; background: #17191bb3;
+      color: #f0c5bf; font-size: 26px; font-weight: 800; letter-spacing: .16em; }
+    .left-shade { position: absolute; z-index: 4; top: 0; bottom: 0; left: 0; width: 1140px;
+      background: linear-gradient(90deg, #17191cf5 0%, #17191ce8 58%, #17191c00 100%); }
+    .logo { position: absolute; z-index: 5; top: 262px; left: 91px; width: 820px; height: auto;
+      filter: drop-shadow(9px 12px 5px #000a); }
+    .tagline { position: absolute; z-index: 5; top: 641px; left: 105px; margin: 0;
+      font-size: 52px; font-weight: 900; letter-spacing: .02em; text-shadow: 3px 5px 3px #000a; }
+    .tagline em { color: #ee766b; font-style: normal; }
+    .features { position: absolute; z-index: 5; top: 745px; left: 107px; color: #dad6d3;
+      font-size: 29px; font-weight: 700; letter-spacing: .08em; }
+    .features b { margin: 0 14px; color: #e36c62; font-size: 24px; }
+    .bottom { position: absolute; z-index: 5; right: 96px; bottom: 78px; left: 103px;
+      display: flex; justify-content: space-between; padding-top: 18px; border-top: 2px solid #ffffff30;
+      color: #b1b3b5; font-size: 21px; font-weight: 700; letter-spacing: .18em; }
+  </style>
+</head>
+<body>
+  <article class="cover" aria-label="Righty Tighty 99 游戏封面">
+    <div class="halo"></div>
+    <svg class="trail" viewBox="0 0 1920 1080" aria-hidden="true">
+      <path d="M 1005 974 H 1260 V 837 H 1492 V 640 H 1712" fill="none" stroke="#e7635a" stroke-width="43" stroke-linecap="round" stroke-linejoin="round" opacity=".17"/>
+      <path d="M 1005 974 H 1260 V 837 H 1492 V 640 H 1712" fill="none" stroke="#df5e56" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity=".36"/>
+    </svg>
+    <div class="edge"></div>
+    <div class="visual"><img src="gameplay.png" alt="角色、目标圈和敌人运动的实机画面"></div>
+    <div class="orb" aria-hidden="true"></div>
+    <div class="left-shade"></div>
+    <div class="kicker">ONE BUTTON ARCADE</div>
+    <div class="version">V0.1</div>
+    <img class="logo" src="../../assets/title-logo-99.svg" alt="RIGHTY TIGHTY 99">
+    <h1 class="tagline">一键转向，<em>挑战更高分。</em></h1>
+    <div class="features">拾取光点 <b>·</b> 擦肩得分 <b>·</b> 解锁隐藏小球</div>
+    <div class="bottom"><span>RIGHTY TIGHTY 99</span><span>网页街机游戏 · V0.1</span></div>
+  </article>
+</body>
+</html>

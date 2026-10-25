@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1080, initial-scale=1">
+  <title>Righty Tighty 99 · v0.1 宣传海报</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 1080px; height: 1350px; margin: 0; overflow: hidden; }
+    body { font-family: Arial, "Microsoft YaHei", sans-serif; color: #f1efec; }
+    .poster { position: relative; width: 1080px; height: 1350px; overflow: hidden;
+      background: radial-gradient(circle at 86% 14%, #49302f 0, transparent 28%),
+        radial-gradient(circle at 12% 77%, #273744 0, transparent 35%), #191a1d; }
+    .poster::before { content: ""; position: absolute; inset: 24px; border: 1px solid #ffffff19; pointer-events: none; }
+    .poster::after { content: ""; position: absolute; top: -105px; right: -105px; width: 370px; height: 370px;
+      border: 55px solid #ca554822; border-radius: 50%; pointer-events: none; }
+    .topline { position: absolute; top: 63px; left: 64px; right: 64px; display: flex; align-items: center;
+      justify-content: space-between; color: #e1746a; font-size: 20px; font-weight: 800; letter-spacing: .27em; }
+    .version { padding: 10px 15px; border: 1px solid #e1746a83; border-radius: 4px; color: #f0d0cb;
+      font-size: 18px; letter-spacing: .16em; }
+    .logo { position: absolute; top: 118px; left: 59px; width: 600px; height: auto;
+      filter: drop-shadow(7px 9px 4px #0009); }
+    .tagline { position: absolute; top: 355px; left: 64px; margin: 0; font-size: 43px;
+      font-weight: 900; letter-spacing: .015em; }
+    .tagline em { color: #e56a61; font-style: normal; }
+    .genre { position: absolute; top: 423px; left: 64px; color: #b2b6bb; font-size: 22px; letter-spacing: .12em; }
+    .hero { position: absolute; top: 479px; left: 64px; width: 952px; height: 535.5px; overflow: hidden;
+      border: 1px solid #ffffff44; border-radius: 7px; background: #323335;
+      box-shadow: 0 28px 55px #0008, 8px 8px 0 #b84f473b; }
+    .hero img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .hero::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 55px #0005; pointer-events: none; }
+    .caption { position: absolute; right: 17px; bottom: 17px; padding: 7px 12px;
+      color: #e3e2e0; background: #18191cbb; font-size: 16px; letter-spacing: .12em; }
+    .section { position: absolute; top: 1038px; left: 64px; right: 64px; }
+    .section h2 { margin: 0 0 21px; color: #e8786e; font-size: 24px; font-weight: 800; letter-spacing: .2em; }
+    .section p { margin: 0; max-width: 940px; font-size: 29px; font-weight: 600; line-height: 1.57; }
+    .tags { display: flex; gap: 15px; margin-top: 18px; }
+    .tags span { padding: 10px 17px; border: 1px solid #ffffff42; border-radius: 3px;
+      color: #eeeae7; background: #ffffff0c; font-size: 19px; font-weight: 700; }
+    .footer { position: absolute; left: 64px; right: 64px; bottom: 35px; display: flex;
+      justify-content: space-between; padding-top: 15px; border-top: 1px solid #ffffff25;
+      color: #989ca1; font-size: 17px; letter-spacing: .12em; }
+  </style>
+</head>
+<body>
+  <article class="poster" aria-label="Righty Tighty 99 宣传海报">
+    <div class="topline"><span>ONE BUTTON ARCADE</span><span class="version">V0.1</span></div>
+    <img class="logo" src="../../assets/title-logo-99.svg" alt="RIGHTY TIGHTY 99">
+    <h1 class="tagline">下一次转向，<em>可能就是新纪录。</em></h1>
+    <div class="genre">单键街机 · 反应挑战</div>
+    <div class="hero"><img src="gameplay.png" alt="游戏实机画面：角色转向、目标圈和移动敌人"><span class="caption">实机画面</span></div>
+    <section class="section">
+      <h2>关于这款游戏</h2>
+      <p>每按一次，转向 90°。拾取光点送回圆环，在敌人的轨迹间寻找擦肩得分的机会。</p>
+      <div class="tags"><span>单键操作</span><span>擦肩得分</span><span>隐藏小球待解锁</span></div>
+    </section>
+    <div class="footer"><span>RIGHTY TIGHTY 99</span><span>网页游戏 · 横屏体验</span></div>
+  </article>
+</body>
+</html>

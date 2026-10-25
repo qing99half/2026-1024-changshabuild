@@ -53,16 +53,17 @@ test('the invisible enemy disables both trail layers', () => {
   assert.ok(ENEMY_TYPES.filter((enemy, index) => index !== 4).every(enemy => enemy.trailWidth > 0));
 });
 
-test('developer mode grants exactly 2000 persistent shop points', () => {
+test('each developer shortcut grants 2000 points, including after reloading', () => {
   const game = createGame();
   assert.equal(activateDeveloperMode(game), true);
-  assert.equal(activateDeveloperMode(game), false);
-  assert.equal(game.totalPoints, 2000);
-  assert.equal(game.lifetimePoints, 2000);
+  assert.equal(activateDeveloperMode(game), true);
+  assert.equal(game.totalPoints, 4000);
+  assert.equal(game.lifetimePoints, 4000);
   const loaded = createGame(snapshotProgress(game));
   assert.equal(loaded.developerMode, true);
-  assert.equal(activateDeveloperMode(loaded), false);
-  assert.equal(loaded.totalPoints, 2000);
+  assert.equal(activateDeveloperMode(loaded), true);
+  assert.equal(loaded.totalPoints, 6000);
+  assert.equal(loaded.lifetimePoints, 6000);
   assert.equal(isSkinRevealed(loaded, 11), true);
 });
 
@@ -427,7 +428,48 @@ test('unlocking a skin spends earned points and survives a save roundtrip', () =
   assert.equal(game.totalPoints, 5);
   const loaded = createGame(snapshotProgress(game));
   assert.equal(loaded.selectedSkin, 1);
-  assert.deepEqual(loaded.unlocked, [0, 1]);
+  assert.deepEqual([...loaded.unlocked].sort((a, b) => a - b), [0, 1]);
+});
+
+test('TES and Kobe skins require their reveal thresholds and purchases', () => {
+  const game = createGame({ totalPoints: 349, lifetimePoints: 349 });
+  assert.deepEqual(game.unlocked, [0]);
+  assert.deepEqual(SKINS.slice(12).map(skin => [skin.revealAt, skin.cost]), [[350, 600], [500, 750]]);
+  selectSkin(game, 12);
+  assert.equal(isSkinRevealed(game, 12), false);
+  assert.equal(buySkin(game), false);
+  game.lifetimePoints = 350;
+  assert.equal(isSkinRevealed(game, 12), true);
+  assert.equal(buySkin(game), false);
+  game.totalPoints = 600;
+  assert.equal(buySkin(game), true);
+  assert.equal(game.totalPoints, 0);
+  selectSkin(game, 13);
+  assert.equal(isSkinRevealed(game, 13), false);
+  game.lifetimePoints = 500;
+  assert.equal(isSkinRevealed(game, 13), true);
+  assert.equal(buySkin(game), false);
+  game.totalPoints = 750;
+  assert.equal(buySkin(game), true);
+  assert.equal(game.totalPoints, 0);
+  const restored = createGame(snapshotProgress(game));
+  assert.equal(restored.selectedSkin, 13);
+  assert.deepEqual(restored.unlocked, [0, 12, 13]);
+  assert.equal(restored.lifetimePoints, 500);
+  assert.deepEqual(SKINS.slice(12).map(({ speed, hurt, pickup, graze, styleBonus }) =>
+    [speed, hurt, pickup, graze, styleBonus]),
+  [[1.01, .90, 1.10, 1.10, 1.18], [.99, .88, 1.08, 1.12, 1.24]]);
+});
+
+test('legacy free TES and Kobe ownership survives without inflating lifetime points', () => {
+  const game = createGame({ totalPoints: 20, lifetimePoints: 200, unlocked: [0, 12, 13], selectedSkin: 13 });
+  assert.deepEqual(game.unlocked, [0, 12, 13]);
+  assert.equal(game.selectedSkin, 13);
+  assert.equal(game.lifetimePoints, 200);
+  assert.equal(isSkinRevealed(game, 12), true);
+  assert.equal(isSkinRevealed(game, 13), true);
+  assert.equal(createGame(snapshotProgress(game)).lifetimePoints, 200);
+  assert.equal(createGame({ totalPoints: 20, unlocked: [0, 12, 13] }).lifetimePoints, 20);
 });
 
 test('scoring keeps the permanent speed increase above the opening cap', () => {
