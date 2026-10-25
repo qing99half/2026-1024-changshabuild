@@ -1,0 +1,13 @@
+{
+  "name": "Righty Tighty 99",
+  "short_name": "Righty 99",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#171719",
+  "theme_color": "#29292b",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

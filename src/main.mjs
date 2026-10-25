@@ -2,6 +2,7 @@ import { createGame, startRound, startTutorial, skipTutorial, step, turn, toggle
 import { preloadAudio, preloadVoiceSet, preloadCharacterAudio, unlockAudio, playAudioEvent, previewEliminate, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode, setVolumeLevels } from './audio.mjs';
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 import { normalizeVolumes } from './audio-policy.mjs';
+import { requestLandscape } from './orientation.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -675,6 +676,22 @@ window.addEventListener('keydown', event => {
 });
 window.addEventListener('blur', () => { if (game.status === 'playing') { togglePause(game); pauseMusic(); syncUI(); } });
 document.addEventListener('visibilitychange', () => { if (document.hidden && game.status === 'playing') { togglePause(game); pauseMusic(); syncUI(); } });
+
+if (matchMedia('(pointer: coarse)').matches) {
+  requestLandscape(screen, document).then(result => {
+    if (result === 'unsupported') {
+      $('rotate-action').hidden = true;
+      $('rotate-help').textContent = '打开自动旋转，并将手机横过来';
+    }
+  });
+}
+$('rotate-action').addEventListener('click', async () => {
+  const result = await requestLandscape(screen, document, true);
+  if (result !== 'locked') {
+    $('rotate-action').hidden = true;
+    $('rotate-help').textContent = '浏览器未允许自动横屏，请打开自动旋转并将手机横过来';
+  }
+});
 
 const pixelsPerUnit = 540 / WORLD.height;
 const sx = x => (x - WORLD.left) * pixelsPerUnit;

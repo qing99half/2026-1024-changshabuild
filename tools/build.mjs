@@ -8,7 +8,7 @@ if (dirname(dist) !== root) throw new Error('Unsafe output path');
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist);
-for (const name of ['index.html', 'style.css', 'src', 'assets']) {
+for (const name of ['index.html', 'style.css', 'manifest.webmanifest', 'src', 'assets']) {
   await cp(resolve(root, name), resolve(dist, name), { recursive: true });
 }
 console.log(`Built static game at ${dist}`);

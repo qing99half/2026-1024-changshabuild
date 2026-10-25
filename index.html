@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#29292b">
   <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.webmanifest">
   <title>Righty Tighty 99 · v0.1</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -97,7 +98,7 @@
         </div>
       </section>
     </div>
-    <div id="rotate" aria-live="polite"><span>↻</span><strong>请横屏游玩</strong><small>旋转手机后即可开始</small></div>
+    <div id="rotate" aria-live="polite"><span>↻</span><strong>横屏游玩</strong><button id="rotate-action" class="primary" type="button">开启横屏 <span>↗</span></button><small id="rotate-help">也可以打开自动旋转，横过手机</small></div>
   </main>
   <script type="module" src="src/main.mjs"></script>
 </body>
