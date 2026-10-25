@@ -20,7 +20,7 @@ const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 
 const fxArt = { explode: 'texture-EnemyExplode-71.png', point: 'GoalZone1-136.png', pulse: 'pulse-138.png' };
 const bonusArt = { points: 'Plus2-142.png', freeze: 'Time-125.png', bomb: 'Bomb-132.png' };
 const skinArt = SKINS.map(skin => skin.art);
-const artUrl = file => file.startsWith('/') ? file : `/assets/original/${file}`;
+const artUrl = file => file.startsWith('assets/') ? file : `assets/original/${file}`;
 const artFiles = ['BackCircle-154.png', 'GoalZone-133.png', 'pointTurn02-124.png', 'pointTurn-130.png', ...enemyArt, ...warningArt,
   ...Object.values(fxArt), ...Object.values(bonusArt), ...skinArt].filter(Boolean);
 const art = new Map();
@@ -386,7 +386,7 @@ function syncUI() {
     $('tutorial-step').textContent = `0${stage + 1} / 03`;
     $('tutorial-title').textContent = ['点击，改变方向', '拾取光点，送回圆环', '避开敌人，继续前进'][stage];
     $('tutorial-detail').textContent = ['连续转向两次，感受单键操作', '碰到白色光点后，转向返回起点圆环', '至少转向一次，并坚持到敌人离开场地'][stage];
-    $('tutorial-input').src = `/assets/original/${matchMedia('(pointer: coarse)').matches ? 'Instruct_Control_MouseON-144.png' : 'Instruct_Control_Space-143.png'}`;
+    $('tutorial-input').src = `assets/original/${matchMedia('(pointer: coarse)').matches ? 'Instruct_Control_MouseON-144.png' : 'Instruct_Control_Space-143.png'}`;
   }
   $('menu-best').textContent = game.best;
   $('menu-points').textContent = game.totalPoints;

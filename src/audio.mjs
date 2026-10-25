@@ -97,7 +97,7 @@ export function preloadVoiceSet(voice) {
   if (voiceLoading.has(voice)) return voiceLoading.get(voice);
   const promise = Promise.all(VOICE_SETS[voice].map(async name => {
     try {
-      const response = await fetch(`/assets/audio/guest/${name}.wav`);
+      const response = await fetch(`assets/audio/guest/${name}.wav`);
       if (response.ok) voiceBuffers.set(name, await audioContext().decodeAudioData(await response.arrayBuffer()));
     } catch { /* Fall back to the calibrated original note. */ }
   })).then(() => {
@@ -127,7 +127,7 @@ export function preloadAudio() {
   if (loading) return loading;
   const original = CLIPS.map(async id => {
     try {
-      const response = await fetch(`/assets/audio/clip-${id}.wav`);
+      const response = await fetch(`assets/audio/clip-${id}.wav`);
       if (!response.ok) return;
       const arrayBuffer = await response.arrayBuffer();
       buffers.set(id, await audioContext().decodeAudioData(arrayBuffer));
@@ -135,14 +135,14 @@ export function preloadAudio() {
   });
   const melodic = MELODY_NOTES.map(async id => {
     try {
-      const response = await fetch(`/assets/audio/melodic/${id}.wav`);
+      const response = await fetch(`assets/audio/melodic/${id}.wav`);
       if (!response.ok) return;
       melodyBuffers.set(id, await audioContext().decodeAudioData(await response.arrayBuffer()));
     } catch { /* The original effect remains available if a derived note fails. */ }
   });
   const elimination = (async () => {
     try {
-      const response = await fetch('/assets/audio/eliminate.wav');
+      const response = await fetch('assets/audio/eliminate.wav');
       if (response.ok) buffers.set('eliminate', await audioContext().decodeAudioData(await response.arrayBuffer()));
     } catch { /* Use an original explosion if the separate cue cannot load. */ }
   })();
@@ -347,7 +347,7 @@ export function playAudioEvent(kind, event = {}) {
 
 export function startMusic() {
   try {
-    music ||= new Audio('/assets/audio/music-101.mp3');
+    music ||= new Audio('assets/audio/music-101.mp3');
     music.loop = true;
     music.volume = .4;
     music.playbackRate = 1;

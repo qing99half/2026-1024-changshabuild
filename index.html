@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#29292b">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Righty Tighty 99 · v0.1</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main id="app">
@@ -17,7 +17,7 @@
       <section id="menu" class="screen" aria-labelledby="menu-title">
         <div class="menu-content">
           <div class="eyebrow">ONE BUTTON ARCADE</div>
-          <h1 id="menu-title"><img class="brand-logo" src="/assets/title-logo-99.svg" alt="RIGHTY TIGHTY 99"></h1>
+          <h1 id="menu-title"><img class="brand-logo" src="assets/title-logo-99.svg" alt="RIGHTY TIGHTY 99"></h1>
           <p class="lead">每按一次，转向 90°。拾取光点，送回圆环。</p>
           <button id="start" class="primary" type="button">开始游戏 <span>↗</span></button>
           <button id="replay-tutorial" class="text-button tutorial-replay" type="button">练习操作</button>
@@ -36,7 +36,7 @@
           <button id="skin-preview" class="skin-preview" type="button">试听转向音效 ♪</button>
           <button id="skin-buy" class="minor" type="button" hidden>解锁</button>
           <div id="skin-feedback" class="skin-feedback" role="status" aria-live="polite"></div>
-          <div class="stat-pair"><span class="stat-label"><img src="/assets/original/Best-147.png" alt="">最高分</span><strong id="menu-best">0</strong></div>
+          <div class="stat-pair"><span class="stat-label"><img src="assets/original/Best-147.png" alt="">最高分</span><strong id="menu-best">0</strong></div>
           <div class="stat-pair"><span>可用点数</span><strong id="menu-points">0</strong></div>
         </div>
       </section>
@@ -45,7 +45,7 @@
           <div class="eyebrow">HOW TO PLAY <span id="tutorial-step">01 / 03</span></div>
           <h2 id="tutorial-title">点击，改变方向</h2>
           <p id="tutorial-detail">连续转向两次，感受单键操作</p>
-          <img id="tutorial-input" src="/assets/original/Instruct_Control_Space-143.png" alt="按空格或点击屏幕转向">
+          <img id="tutorial-input" src="assets/original/Instruct_Control_Space-143.png" alt="按空格或点击屏幕转向">
         </div>
         <button id="tutorial-skip" type="button">跳过教程 →</button>
       </section>
@@ -64,7 +64,7 @@
           <div class="eyebrow">ROUND COMPLETE</div>
           <h2 id="results-title">再来一局？</h2>
           <div class="result-score" id="result-score">0</div>
-          <div class="result-meta"><span><img src="/assets/original/Time-125.png" alt="">用时 <strong id="result-time">0.00s</strong></span><span><img src="/assets/original/Best-147.png" alt="">最佳 <strong id="result-best">0</strong></span></div>
+          <div class="result-meta"><span><img src="assets/original/Time-125.png" alt="">用时 <strong id="result-time">0.00s</strong></span><span><img src="assets/original/Best-147.png" alt="">最佳 <strong id="result-best">0</strong></span></div>
           <div class="result-reward"><span>本局获得 <strong id="result-earned">+0 点</strong></span><small id="result-style">其中风格奖励 +0 点</small><small>当前余额 <b id="result-balance">0</b></small></div>
           <button id="restart" class="primary" type="button">再玩一次 <span>↗</span></button>
           <button id="menu-from-results" class="text-button" type="button">返回菜单</button>
@@ -99,6 +99,6 @@
     </div>
     <div id="rotate" aria-live="polite"><span>↻</span><strong>请横屏游玩</strong><small>旋转手机后即可开始</small></div>
   </main>
-  <script type="module" src="/src/main.mjs"></script>
+  <script type="module" src="src/main.mjs"></script>
 </body>
 </html>
