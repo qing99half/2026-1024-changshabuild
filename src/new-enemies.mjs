@@ -1,6 +1,7 @@
 const BOUNCE_SPEED = 2.4 / Math.SQRT2;
 const BOUNCE_EDGE = 3.3;
-const BLINK_BOUNDS = Object.freeze({ left: -5.8, right: 5.8, bottom: -2.8, top: 2.8 });
+const BLINK_LANE_LIMIT = 2.8;
+const BLINK_STATION_X = 5.4;
 const BLINK_CLEARANCE = 1.2;
 const BLINK_WARNING = 0.8;
 const BLINK_GRACE = 0.15;
@@ -12,37 +13,30 @@ function sample(random) {
   return Number.isFinite(value) ? Math.max(0, Math.min(1 - Number.EPSILON, value)) : 0;
 }
 
-function blinkTarget(random, player) {
+function blinkLane(y, side, player) {
+  const proposed = Math.max(-BLINK_LANE_LIMIT, Math.min(BLINK_LANE_LIMIT, y));
   const reference = player && Number.isFinite(player.x) && Number.isFinite(player.y)
     ? player : { x: 0, y: 0 };
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const x = BLINK_BOUNDS.left + sample(random) * (BLINK_BOUNDS.right - BLINK_BOUNDS.left);
-    const y = BLINK_BOUNDS.bottom + sample(random) * (BLINK_BOUNDS.top - BLINK_BOUNDS.bottom);
-    if (Math.hypot(x - reference.x, y - reference.y) >= BLINK_CLEARANCE) return { x, y };
-  }
-  const corners = [
-    { x: BLINK_BOUNDS.left, y: BLINK_BOUNDS.bottom },
-    { x: BLINK_BOUNDS.left, y: BLINK_BOUNDS.top },
-    { x: BLINK_BOUNDS.right, y: BLINK_BOUNDS.bottom },
-    { x: BLINK_BOUNDS.right, y: BLINK_BOUNDS.top }
-  ];
-  return corners.reduce((farthest, corner) =>
-    Math.hypot(corner.x - reference.x, corner.y - reference.y) >
-      Math.hypot(farthest.x - reference.x, farthest.y - reference.y) ? corner : farthest);
+  if (Math.hypot(side * BLINK_STATION_X - reference.x, proposed - reference.y) >= BLINK_CLEARANCE)
+    return proposed;
+  return reference.y >= 0 ? -BLINK_LANE_LIMIT : BLINK_LANE_LIMIT;
 }
 
 export function createNewEnemy(type, { id, x, y, side, random = Math.random, player } = {}) {
-  const shared = { id, x, y, type, radius: .25, age: 0, near: false, trail: [] };
+  const shared = { id, x, y, type, age: 0, near: false, trail: [] };
   if (type === 7) {
-    return { ...shared, shape: 'EnemyBounce45', vx: -side * BOUNCE_SPEED,
+    return { ...shared, shape: 'EnemyBounce45', radius: .2, hitW: .4, hitH: .4,
+      vx: -side * BOUNCE_SPEED,
       vy: (sample(random) < .5 ? -1 : 1) * BOUNCE_SPEED,
       trail: [{ x, y, age: 0 }] };
   }
   if (type === 8) {
-    const target = blinkTarget(random, player);
-    return { ...shared, radius: .28, shape: 'EnemyBlink', vx: 0, vy: 0,
+    const entranceSide = side === -1 ? -1 : 1;
+    const laneY = blinkLane(y, entranceSide, player);
+    return { ...shared, radius: .224, hitW: .448, hitH: .448,
+      shape: 'EnemyBlink', vx: 0, vy: 0, side: entranceSide, laneY,
       phase: 'warning', phaseTimer: BLINK_WARNING, jumps: 0,
-      targetX: target.x, targetY: target.y };
+      targetX: entranceSide * BLINK_STATION_X, targetY: laneY };
   }
   throw new RangeError(`Unsupported new enemy type: ${type}`);
 }
@@ -58,7 +52,7 @@ function advanceBounce(enemy, dt) {
   return [];
 }
 
-function nextBlinkPhase(enemy, random, player, events) {
+function nextBlinkPhase(enemy, events) {
   if (enemy.phase === 'warning') {
     enemy.x = enemy.targetX;
     enemy.y = enemy.targetY;
@@ -75,17 +69,17 @@ function nextBlinkPhase(enemy, random, player, events) {
       enemy.phaseTimer = 0;
       enemy.gone = true;
     } else {
-      const target = blinkTarget(random, player);
-      enemy.targetX = target.x;
-      enemy.targetY = target.y;
+      enemy.targetX = enemy.jumps === 1 ? 0 : -enemy.side * BLINK_STATION_X;
+      enemy.targetY = enemy.laneY;
       enemy.phase = 'warning';
       enemy.phaseTimer = BLINK_WARNING;
-      events.push({ kind: 'enemy-telegraph', x: target.x, y: target.y, type: enemy.type, targetId: enemy.id });
+      events.push({ kind: 'enemy-telegraph', x: enemy.targetX, y: enemy.targetY,
+        type: enemy.type, targetId: enemy.id });
     }
   }
 }
 
-function advanceBlink(enemy, dt, random, player) {
+function advanceBlink(enemy, dt) {
   const events = [];
   let remaining = dt;
   for (let transition = 0; transition < BLINK_HOPS * 3 && enemy.phase !== 'gone'; transition++) {
@@ -93,7 +87,7 @@ function advanceBlink(enemy, dt, random, player) {
     enemy.phaseTimer -= elapsed;
     remaining -= elapsed;
     if (enemy.phaseTimer > 1e-9) break;
-    nextBlinkPhase(enemy, random, player, events);
+    nextBlinkPhase(enemy, events);
     if (remaining <= 1e-9) break;
   }
   return events;
@@ -102,7 +96,7 @@ function advanceBlink(enemy, dt, random, player) {
 export function advanceNewEnemy(enemy, dt, { random = Math.random, player } = {}) {
   if (!Number.isFinite(dt) || dt <= 0 || enemy.gone) return [];
   if (enemy.type === 7) return advanceBounce(enemy, dt);
-  if (enemy.type === 8) return advanceBlink(enemy, dt, random, player);
+  if (enemy.type === 8) return advanceBlink(enemy, dt);
   throw new RangeError(`Unsupported new enemy type: ${enemy.type}`);
 }
 

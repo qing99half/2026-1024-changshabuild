@@ -125,6 +125,50 @@ test('new protective balls apply before same-frame enemy contact', () => {
   }
 });
 
+test('phase emits one pass ripple per overlap without collision or graze score', () => {
+  const game = createGame(); startRound(game);
+  game.phaseTimer = 5; game.player.x = 0; game.player.y = 0;
+  game.point = null; game.spawnTimer = -100;
+  const enemy = { id: 430, x: 0, y: 0, vx: 0, vy: 0, type: 0,
+    radius: .25, hitW: .5, hitH: .5, near: false };
+  game.enemies = [enemy];
+  for (let i = 0; i < 2; i++) {
+    game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+    step(game);
+  }
+  assert.equal(game.status, 'playing');
+  assert.equal(game.score, 0);
+  assert.equal(game.events.filter(event => event.kind === 'phase-pass').length, 1);
+  enemy.x = 2;
+  step(game);
+  enemy.x = 0;
+  game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+  step(game);
+  assert.equal(game.events.filter(event => event.kind === 'phase-pass').length, 2);
+  assert.equal(game.events.some(event => event.kind === 'near-miss'), false);
+});
+
+test('new enemy collision uses the reduced square box', () => {
+  for (const [type, size] of [[7, .4], [8, .448]]) {
+    const game = createGame(); startRound(game);
+    game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+    game.point = null; game.spawnTimer = -100;
+    game.enemies = [{ id: type, x: .42, y: .42, vx: 0, vy: 0, type,
+      radius: size / 2, hitW: size, hitH: size, near: false, trail: [],
+      phase: 'active', phaseTimer: 5, jumps: 1, side: 1, laneY: .42 }];
+    step(game);
+    assert.equal(game.status, 'dying', `type ${type} square corner must collide`);
+    startRound(game);
+    game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+    game.point = null; game.spawnTimer = -100;
+    game.enemies = [{ id: type, x: .6, y: 0, vx: 0, vy: 0, type,
+      radius: size / 2, hitW: size, hitH: size, near: false, trail: [],
+      phase: 'active', phaseTimer: 5, jumps: 1, side: 1, laneY: 0 }];
+    step(game);
+    assert.equal(game.status, 'playing', `type ${type} reduced side must clear`);
+  }
+});
+
 test('bullet-time pickup slows enemy travel while increasing player travel', () => {
   const baseline = createGame(); const boosted = createGame();
   for (const game of [baseline, boosted]) {

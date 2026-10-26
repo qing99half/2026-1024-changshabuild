@@ -19,8 +19,8 @@ export const ENEMY_TYPES = Object.freeze([
   { name: 'EnemySquare5', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: 0, warningOffset: 2.21, warningScaleX: 10, warningScaleY: 8 },
   { name: 'EnemySquare6', width: .0625, height: .0625, radius: .03125, trailLife: .5, trailWidth: .5, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
   { name: 'EnemySquare7', width: .4945, height: .4945, radius: .25, trailLife: .5, trailWidth: .485, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 },
-  { name: 'EnemyBounce45', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: .49, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 },
-  { name: 'EnemyBlink', width: .56, height: .56, radius: .28, trailLife: .5, trailWidth: 0, warningOffset: 0, warningScaleX: 0, warningScaleY: 0 }
+  { name: 'EnemyBounce45', width: .4, height: .4, radius: .2, trailLife: .5, trailWidth: .392, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 },
+  { name: 'EnemyBlink', width: .448, height: .448, radius: .224, trailLife: .5, trailWidth: 0, warningOffset: 0, warningScaleX: 0, warningScaleY: 0 }
 ]);
 
 function random(game) {
@@ -311,9 +311,26 @@ function score(game, value, reason, position = {}) {
 }
 
 function checkGraze(game, enemy, reward = true, previousPlayer = game.player, previousEnemy = enemy) {
-  if (enemy.type === 8 && !newEnemyCanCollide(enemy)) return null;
+  if (enemy.type === 8 && !newEnemyCanCollide(enemy)) {
+    enemy.phasePassed = false;
+    enemy.near = false;
+    enemy.closestClearance = undefined;
+    enemy.grazeMode = undefined;
+    return null;
+  }
   const contactEffect = enemyContactEffect(game);
-  if (contactEffect === 'ignore') { enemy.near = false; return null; }
+  if (contactEffect === 'ignore') {
+    const overlapping = Boolean(enemyHitsCircle(enemy,
+      { x: game.player.x, y: game.player.y, radius: hurtRadius(game) }));
+    if (overlapping && !enemy.phasePassed) emit(game, 'phase-pass', '',
+      { x: game.player.x, y: game.player.y, targetId: enemy.id, type: enemy.type });
+    enemy.phasePassed = overlapping;
+    enemy.near = false;
+    enemy.closestClearance = undefined;
+    enemy.grazeMode = undefined;
+    return null;
+  }
+  enemy.phasePassed = false;
   const player = game.player;
   const outer = nearMissRadius(game);
   const inner = hurtRadius(game);

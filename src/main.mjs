@@ -4,6 +4,7 @@ import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 import { normalizeVolumes } from './audio-policy.mjs';
 import { requestLandscape } from './orientation.mjs';
 import { directionVector } from './directions.mjs';
+import { drawPowerupBackground, drawPowerupForeground, drawPowerupPlayerAura } from './powerup-visuals.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -211,8 +212,10 @@ function visualEvent(event) {
     ring(x, y, tint, 0, .55, 72);
   }
   if (event.kind === 'enemy-teleport') burst(x, y, 14, 1.2, .45, enemyColors[8], 4);
+  if (event.kind === 'phase-pass') ring(x, y, '#a6dadd', 0, .32, 34);
   if (event.kind === 'enemy-explode') {
     shatter(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6);
+    if (event.source === 'invincible') ring(x, y, '#f6d688', 0, .3, 46);
     shake = Math.max(shake, event.source === 'near-miss' ? .06 : .08);
   }
   if (event.kind === 'near-miss') {
@@ -850,8 +853,8 @@ function drawEnemyTrail(enemy, color, config) {
   if (!config.trailWidth || !enemy.trail || enemy.trail.length < 2) return;
   ctx.save();
   const life = config.trailLife || ENEMY_TRAIL_LIFE;
-  const width = px(config.width * (enemy.type === 5 ? 5 : 1.4));
-  const height = px(config.height * (enemy.type === 5 ? 5 : 1.4));
+  const width = px(config.width * (enemy.type === 5 ? 5 : enemy.type === 7 ? 1.45 : 1.4));
+  const height = px(config.height * (enemy.type === 5 ? 5 : enemy.type === 7 ? 1.45 : 1.4));
   for (let i = enemy.trail.length - 2; i >= 0; i -= 4) {
     const point = enemy.trail[i];
     const freshness = Math.max(0, 1 - point.age / life);
@@ -859,7 +862,8 @@ function drawEnemyTrail(enemy, color, config) {
     const alpha = .13 * .784 * freshness * (enemy.fadeAlpha ?? 1);
     if (enemy.type === 7) {
       ctx.globalAlpha = alpha;
-      circle(sx(point.x), sy(point.y), px(config.radius * 1.45), color);
+      ctx.fillStyle = color;
+      ctx.fillRect(sx(point.x) - width / 2, sy(point.y) - height / 2, width, height);
       ctx.globalAlpha = 1;
       continue;
     }
@@ -887,6 +891,21 @@ function drawEnemyWarning(enemy, config, y) {
   const age = enemy.age || 0;
   const alpha = Math.max(0, 1 - age * .6);
   if (alpha <= 0) return;
+  if (enemy.type === 7) {
+    const direction = Math.sign(enemy.vx) || -1;
+    const warningX = Math.max(WORLD.left + .6,
+      Math.min(WORLD.right - .6, enemy.x + direction * config.warningOffset));
+    const x = sx(warningX);
+    const side = px(config.width * 1.45);
+    ctx.save();
+    ctx.globalAlpha = alpha * .38;
+    ctx.fillStyle = enemyColors[7];
+    ctx.shadowColor = enemyColors[7];
+    ctx.shadowBlur = side;
+    ctx.fillRect(x - side / 2, y - side / 2, side, side);
+    ctx.restore();
+    return;
+  }
   const scaleY = warningScale(config.warningScaleY, age);
   if (scaleY <= 0) return;
   const file = warningArt[enemy.type];
@@ -913,30 +932,30 @@ function drawEnemies() {
       const progress = 1 - Math.max(0, enemy.phaseTimer) / .8;
       const alpha = Math.sin(Math.PI * Math.min(1, progress)) * .72;
       const targetX = sx(enemy.targetX), targetY = sy(enemy.targetY);
+      const side = px(config.width * 1.45);
+      const warningSide = side * (1.55 - .25 * progress);
       ctx.save();
-      const glow = ctx.createRadialGradient(targetX, targetY, 1, targetX, targetY, 85);
-      glow.addColorStop(0, `rgba(140,219,214,${alpha})`);
-      glow.addColorStop(1, 'rgba(140,219,214,0)');
-      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(targetX, targetY, 85, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = fill;
+      ctx.shadowColor = fill;
+      ctx.shadowBlur = side * .9;
+      ctx.globalAlpha = alpha * .25;
+      ctx.fillRect(targetX - side / 2, targetY - side / 2, side, side);
       ctx.globalAlpha = alpha;
-      circle(targetX, targetY, px(config.radius * 1.6), null, fill, 2);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(targetX - warningSide / 2, targetY - warningSide / 2, warningSide, warningSide);
       ctx.restore();
       continue;
     }
     drawEnemyWarning(enemy, config, y);
     drawEnemyTrail(enemy, fill, config);
     if (enemy.type >= 7) {
+      const width = px(config.width * 1.45);
+      const height = px(config.height * 1.45);
       ctx.save();
       if (enemy.type === 8 && enemy.phase === 'grace') ctx.globalAlpha = .52;
-      circle(x, y, r * 1.45, fill, '#ffffff99', 2);
-      if (enemy.type === 7) {
-        ctx.strokeStyle = '#fff8'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(x - r * .9, y); ctx.lineTo(x, y - r * .45);
-        ctx.lineTo(x + r * .9, y); ctx.stroke();
-      } else {
-        circle(x, y, r * .45, '#e9fffd');
-        circle(x, y, r * 1.75, null, fill, 1);
-      }
+      ctx.fillStyle = fill;
+      ctx.fillRect(x - width / 2, y - height / 2, width, height);
       ctx.restore();
       continue;
     }
@@ -1065,12 +1084,7 @@ function drawPlayer() {
     else circle(x, y, r * .79, '#f1f1ef', color, 2);
   }
   ctx.restore();
-  if (game.invincibleTimer > 0) {
-    const alpha = .45 + .2 * Math.sin(visualTime * 9);
-    ctx.save(); ctx.globalAlpha = alpha;
-    circle(x, y, r * 1.35, null, '#f7d783', 3);
-    ctx.restore();
-  }
+  drawPowerupPlayerAura(ctx, game, visualTime, reducedMotion, x, y, r);
   if (game.bulletTimer > 0) {
     ctx.save(); ctx.globalAlpha = .38;
     circle(x, y, r * 1.57, null, '#aaaaff', 2);
@@ -1102,6 +1116,7 @@ function render() {
   ctx.save();
   if (shake > 0 && !reducedMotion) ctx.translate((Math.random() * 2 - 1) * px(shake), (Math.random() * 2 - 1) * px(shake));
   background();
+  drawPowerupBackground(ctx, game, visualTime, reducedMotion);
   drawScorePulses();
   drawBackgroundScore();
   if (game.status === 'menu') {
@@ -1111,8 +1126,10 @@ function render() {
     circle(670, 310, 25, '#d65a55');
     ctx.globalAlpha = 1;
   } else {
-    drawGoal(); drawEnemies(); drawBonuses(); drawTesWhips(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes(); hud();
+    drawGoal(); drawEnemies(); drawBonuses(); drawTesWhips(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes();
     if (game.freezeTimer > 0) { ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540); }
+    drawPowerupForeground(ctx, game, visualTime, reducedMotion);
+    hud();
   }
   ctx.restore();
 }
