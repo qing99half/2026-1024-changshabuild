@@ -1,6 +1,6 @@
 {
   "name": "righty-tighty-99",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Righty Tighty 99 desktop arcade game",
   "author": "qing99half",
   "private": true,
@@ -32,7 +32,7 @@
       "signExecutable": false
     },
     "portable": {
-      "artifactName": "Righty-Tighty-99-v0.1-win-x64.exe"
+      "artifactName": "Righty-Tighty-99-v0.2-win-x64.exe"
     }
   },
   "devDependencies": {

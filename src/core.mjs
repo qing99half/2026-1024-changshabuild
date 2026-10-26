@@ -1,12 +1,16 @@
 import { turnTone } from './melody.mjs';
 import { SKINS, activeSkin, isSkinRevealed } from './skins.mjs';
+import { directionVector, turnHeading, toneDirection } from './directions.mjs';
+import { nextPointKind } from './special-points.mjs';
+import { chooseBonusKind, applyPowerup, stepPowerups, playerSpeedMultiplier, enemySpeedMultiplier, spawnSpeedMultiplier, enemyContactEffect } from './powerups.mjs';
+import { createNewEnemy, advanceNewEnemy, newEnemyCanCollide } from './new-enemies.mjs';
 
 export const STEP = 1 / 60;
 export const ENEMY_TRAIL_LIFE = 0.65;
 // The Unity camera has a 3.84 world-unit orthographic half-height; 16:9 gives this field.
 export const WORLD = Object.freeze({ width: 13.653333333333334, height: 7.68, left: -6.826666666666667, right: 6.826666666666667, top: 3.84, bottom: -3.84 });
-export const ENEMY_UNLOCK_SCORES = Object.freeze([0, 2, 4, 6, 8, 10, 12]);
-export const CLASSIC_ENEMY_UNLOCK_SCORES = Object.freeze([0, 5, 10, 15, 20, 25, 30]);
+export const ENEMY_UNLOCK_SCORES = Object.freeze([0, 2, 4, 6, 8, 10, 12, 8, 12]);
+export const CLASSIC_ENEMY_UNLOCK_SCORES = Object.freeze([0, 5, 10, 15, 20, 25, 30, 35, 40]);
 export const ENEMY_TYPES = Object.freeze([
   { name: 'EnemySquare', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: .49, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
   { name: 'EnemySquare2', width: 1.0465, height: .4945, radius: .53, trailLife: .65, trailWidth: .488, warningOffset: 2.41, warningScaleX: 5.5, warningScaleY: .55 },
@@ -14,7 +18,9 @@ export const ENEMY_TYPES = Object.freeze([
   { name: 'EnemySquare4', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: .49, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
   { name: 'EnemySquare5', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: 0, warningOffset: 2.21, warningScaleX: 10, warningScaleY: 8 },
   { name: 'EnemySquare6', width: .0625, height: .0625, radius: .03125, trailLife: .5, trailWidth: .5, warningOffset: 2.11, warningScaleX: 10, warningScaleY: 1 },
-  { name: 'EnemySquare7', width: .4945, height: .4945, radius: .25, trailLife: .5, trailWidth: .485, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 }
+  { name: 'EnemySquare7', width: .4945, height: .4945, radius: .25, trailLife: .5, trailWidth: .485, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 },
+  { name: 'EnemyBounce45', width: .5, height: .5, radius: .25, trailLife: .5, trailWidth: .49, warningOffset: 2.1, warningScaleX: 5.5, warningScaleY: .55 },
+  { name: 'EnemyBlink', width: .56, height: .56, radius: .28, trailLife: .5, trailWidth: 0, warningOffset: 0, warningScaleX: 0, warningScaleY: 0 }
 ]);
 
 function random(game) {
@@ -94,8 +100,9 @@ export function createGame(saved = {}, seed = 0x1024) {
     tutorial: null, introducedEnemies: [], nextEnemyId: 1,
     classicSpawns: Boolean(saved.classicSpawns), developerMode: Boolean(saved.developerMode), freezeFxTimer: 0,
     time: 0, deathTimer: 0, freezeTimer: 0, slowTimer: 0, slowPhase: null, timeScale: 1,
+    angle45: false, invincibleTimer: 0, phaseTimer: 0, bulletTimer: 0, bonusIntroduced: [],
     player: null, goal: null, point: null, enemies: [], bonuses: [], bombWaves: [], trail: [],
-    spawnTimer: 0, spawned: 0, nextBonusAt: 7, pointCount: 0, nextTurnPointAt: 8,
+    spawnTimer: 0, spawned: 0, nextBonusAt: 7, pointCount: 0, nextSpecialPointAt: 8, specialDebuts: 0,
     pointSpawnLow: 0.2, pointSpawnHigh: 0.8, goalCorner: -1, goalTarget: null
   };
 }
@@ -150,6 +157,11 @@ export function startRound(game) {
   game.slowTimer = 0;
   game.slowPhase = null;
   game.timeScale = 1;
+  game.angle45 = false;
+  game.invincibleTimer = 0;
+  game.phaseTimer = 0;
+  game.bulletTimer = 0;
+  game.bonusIntroduced = [];
   game.player = { x: 0, y: -2.65, dir: 0, speed: 0, size: 0.425, growth: 0.0001, clockwise: true, carrying: false };
   game.goal = { x: 0, y: -2.65, size: 0.375 };
   game.point = { x: 0, y: 2.75, kind: 'normal', phase: 'field', returnTimer: 0, age: 0 };
@@ -163,7 +175,8 @@ export function startRound(game) {
   game.nextEnemyId = 1;
   game.nextBonusAt = 7;
   game.pointCount = 0;
-  game.nextTurnPointAt = 8;
+  game.nextSpecialPointAt = 8;
+  game.specialDebuts = 0;
   game.pointSpawnLow = 0.2;
   game.pointSpawnHigh = 0.8;
   game.goalCorner = -1;
@@ -264,10 +277,11 @@ function stepTutorial(game) {
 
 export function turn(game) {
   if (game.status !== 'playing' && game.status !== 'tutorial') return false;
-  game.player.dir = (game.player.dir + (game.player.clockwise ? 1 : 3)) % 4;
-  const tone = turnTone(game.player.y, game.player.dir);
+  const heading = turnHeading(Math.round(game.player.dir * 2), game.player.clockwise, game.angle45 && game.status === 'playing');
+  game.player.dir = heading / 2;
+  const tone = turnTone(game.player.y, toneDirection(heading));
   emit(game, 'turn', '', {
-    x: game.player.x, y: game.player.y, dir: game.player.dir,
+    x: game.player.x, y: game.player.y, dir: game.player.dir, heading,
     toneId: tone.id, toneBand: tone.band
   });
   if (game.status === 'tutorial') {
@@ -297,6 +311,9 @@ function score(game, value, reason, position = {}) {
 }
 
 function checkGraze(game, enemy, reward = true, previousPlayer = game.player, previousEnemy = enemy) {
+  if (enemy.type === 8 && !newEnemyCanCollide(enemy)) return null;
+  const contactEffect = enemyContactEffect(game);
+  if (contactEffect === 'ignore') { enemy.near = false; return null; }
   const player = game.player;
   const outer = nearMissRadius(game);
   const inner = hurtRadius(game);
@@ -314,6 +331,12 @@ function checkGraze(game, enemy, reward = true, previousPlayer = game.player, pr
       x: previousEnemy.x + (enemy.x - previousEnemy.x) * t,
       y: previousEnemy.y + (enemy.y - previousEnemy.y) * t };
     if (enemyHitsCircle(movingEnemy, { ...movingPlayer, radius: inner })) {
+      if (contactEffect === 'shatter') {
+        enemy.gone = true;
+        emit(game, 'enemy-explode', '', { x: enemy.x, y: enemy.y, type: enemy.type,
+          targetId: enemy.id, source: 'invincible' });
+        return 'completed';
+      }
       if (reward) die(game, 'enemy');
       return 'hit';
     }
@@ -321,12 +344,16 @@ function checkGraze(game, enemy, reward = true, previousPlayer = game.player, pr
     if (clearance < outer) {
       touched = true;
       closest = Math.min(closest, clearance);
-      const direction = Math.sign(enemy.vx);
-      const forward = (movingPlayer.x - movingEnemy.x) * direction;
-      const lateral = movingPlayer.y - movingEnemy.y;
-      const perpendicular = (player.dir === 0 || player.dir === 2)
+      const velocityLength = Math.hypot(enemy.vx, enemy.vy) || 1;
+      const travelX = enemy.vx / velocityLength, travelY = enemy.vy / velocityLength;
+      const offsetX = movingPlayer.x - movingEnemy.x, offsetY = movingPlayer.y - movingEnemy.y;
+      const forward = offsetX * travelX + offsetY * travelY;
+      const lateral = offsetY * travelX - offsetX * travelY;
+      const playerTravel = directionVector(Math.round(player.dir * 2));
+      const alignment = playerTravel.x * travelX + playerTravel.y * travelY;
+      const perpendicular = Math.abs(alignment) < .75
         && forward > .08 && forward >= Math.abs(lateral) * .25;
-      const headOn = (player.dir === (direction > 0 ? 3 : 1))
+      const headOn = alignment < -.75
         && Math.abs(lateral) > .08 && Math.abs(forward) <= .12;
       const mode = perpendicular ? 'perpendicular' : headOn ? 'head-on' : null;
       if (mode && clearance <= inner + (outer - inner) * .85) qualifyingMode = mode;
@@ -401,19 +428,17 @@ function goalSize(scoreValue) {
 }
 
 function nextPoint(game) {
-  game.pointCount++;
   if (game.pointSpawnLow >= 0.075) {
     game.pointSpawnLow -= 0.005;
     game.pointSpawnHigh += 0.005;
   }
-  const special = game.pointCount >= game.nextTurnPointAt;
-  if (special) {
-    game.pointCount = 0;
-    game.nextTurnPointAt = 2 + Math.floor(random(game) * 8);
-  }
+  const choice = nextPointKind(game, game.score, () => random(game));
+  game.pointCount = choice.pointCount;
+  game.nextSpecialPointAt = choice.nextSpecialPointAt;
+  game.specialDebuts = choice.specialDebuts;
   const viewX = between(game, game.pointSpawnLow, game.pointSpawnHigh);
   const viewY = between(game, game.score <= 10 ? 0.5 : game.pointSpawnLow, game.pointSpawnHigh);
-  game.point = { x: (viewX - 0.5) * WORLD.width, y: (viewY - 0.5) * WORLD.height, kind: special ? 'turn' : 'normal', phase: 'field', returnTimer: 0, age: 0 };
+  game.point = { x: (viewX - 0.5) * WORLD.width, y: (viewY - 0.5) * WORLD.height, kind: choice.kind, phase: 'field', returnTimer: 0, age: 0 };
   emit(game, 'point-spawn');
 }
 
@@ -425,16 +450,24 @@ function spawnEnemy(game) {
   if (game.spawned >= game.nextBonusAt) {
     game.spawned = 0;
     game.nextBonusAt = 10 + Math.floor(random(game) * 10);
-    const kind = ['points', 'freeze', 'bomb'][Math.floor(random(game) * 3)];
+    const kind = chooseBonusKind(game, () => random(game));
     game.bonuses.push({ x, y, vx: -side * 2.4, kind, radius: 0.2925 });
     return;
   }
   const thresholds = game.classicSpawns ? CLASSIC_ENEMY_UNLOCK_SCORES : ENEMY_UNLOCK_SCORES;
-  const pool = thresholds.filter(threshold => game.score >= threshold).length;
-  const debut = ENEMY_TYPES.findIndex((_, index) => index < pool && !game.introducedEnemies.includes(index));
-  const type = debut >= 0 ? debut : Math.floor(random(game) * pool);
+  const eligible = ENEMY_TYPES.map((_, index) => index).filter(index => game.score >= thresholds[index]);
+  const debut = eligible.find(index => !game.introducedEnemies.includes(index));
+  const type = debut ?? eligible[Math.floor(random(game) * eligible.length)];
   if (!game.introducedEnemies.includes(type)) game.introducedEnemies.push(type);
   const config = ENEMY_TYPES[type];
+  if (type >= 7) {
+    const enemy = createNewEnemy(type, { id: game.nextEnemyId++, x, y, side,
+      random: () => random(game), player: game.player });
+    game.enemies.push(enemy);
+    if (type === 8) emit(game, 'enemy-telegraph', '',
+      { x: enemy.targetX, y: enemy.targetY, type, targetId: enemy.id });
+    return;
+  }
   const groupId = type === 6 ? game.nextEnemyId : null;
   for (const member of type === 6 ? [-1, 1] : [0]) {
     const memberY = y + member * .276;
@@ -489,6 +522,7 @@ export function step(game) {
   }
   if (game.status === 'tutorial') return stepTutorial(game);
   if (game.status !== 'playing') return game;
+  stepPowerups(game, STEP);
 
   if (game.slowPhase === 'down') {
     if (game.timeScale >= 0.25) game.timeScale -= STEP * game.timeScale * 2;
@@ -507,11 +541,10 @@ export function step(game) {
   const previousPlayer = { x: player.x, y: player.y };
   if (player.speed < 0.054) player.speed = Math.min(0.054, player.speed + 0.025 * STEP);
   player.size += player.growth * dtScale;
-  const speed = player.speed * dtScale * activeSkin(game).speed;
-  if (player.dir === 0) player.y += speed;
-  else if (player.dir === 1) player.x += speed;
-  else if (player.dir === 2) player.y -= speed;
-  else player.x -= speed;
+  const speed = player.speed * dtScale * activeSkin(game).speed * playerSpeedMultiplier(game);
+  const travel = directionVector(Math.round(player.dir * 2));
+  player.x += travel.x * speed;
+  player.y += travel.y * speed;
   game.trail.push({ x: player.x, y: player.y, ttl: 1 });
   if (game.trail.length > 80) game.trail.shift();
   game.trail = game.trail.filter(p => (p.ttl -= STEP) > 0);
@@ -548,16 +581,22 @@ export function step(game) {
     game.point.x = player.x;
     game.point.y = player.y;
     if (distance(player, game.goal) < playerRadius(player) + goalRadius(game.goal)) {
-      const special = game.point.kind === 'turn';
+      const pointKind = game.point.kind;
+      const special = pointKind === 'turn' || pointKind === 'angle45';
       game.point.phase = 'returning';
       game.point.returnTimer = 0.22;
       player.carrying = false;
-      score(game, 1, special ? 'deliver-turn' : 'deliver', { x: game.goal.x, y: game.goal.y });
+      score(game, 1, special ? 'deliver-turn' : 'deliver',
+        { x: game.goal.x, y: game.goal.y, pointKind });
       if (special) {
-        player.clockwise = !player.clockwise;
+        if (pointKind === 'turn') player.clockwise = !player.clockwise;
+        else game.angle45 = !game.angle45;
         game.slowPhase = 'down';
         game.slowTimer = 1;
-        emit(game, 'reverse', player.clockwise ? '恢复右转' : '方向反转：左转', { x: game.goal.x, y: game.goal.y });
+        if (pointKind === 'turn') emit(game, 'reverse', player.clockwise ? '恢复右转' : '方向反转：左转',
+          { x: game.goal.x, y: game.goal.y });
+        else emit(game, 'angle-mode', game.angle45 ? '转向角度：45°' : '转向角度：90°',
+          { x: game.goal.x, y: game.goal.y, angle45: game.angle45 });
       }
     }
   }
@@ -571,8 +610,28 @@ export function step(game) {
     }
   }
 
+  // A collected shield or phase ball must affect collisions in this same step.
+  for (const bonus of game.bonuses) {
+    if (game.freezeTimer <= 0) bonus.x += bonus.vx * STEP * dtScale;
+    if (distance(player, bonus) < pickupDistance(game, bonus.radius)) {
+      bonus.gone = true;
+      if (bonus.kind === 'points') score(game, 2, 'bonus', { x: bonus.x, y: bonus.y });
+      else if (bonus.kind === 'freeze') {
+        score(game, 1, 'freeze', { x: bonus.x, y: bonus.y });
+        game.freezeTimer = 7; game.freezeFxTimer = 5.5;
+      } else if (bonus.kind === 'bomb') {
+        score(game, 1, 'bomb', { x: bonus.x, y: bonus.y });
+        game.bombWaves.push({ x: bonus.x, y: bonus.y, age: 0 });
+      } else {
+        score(game, 1, bonus.kind, { x: bonus.x, y: bonus.y });
+        applyPowerup(game, bonus.kind);
+      }
+    }
+  }
+  game.bonuses = game.bonuses.filter(b => !b.gone && Math.abs(b.x) < WORLD.width * 0.9);
+
   if (game.freezeTimer <= 0) {
-    game.spawnTimer += STEP * dtScale;
+    game.spawnTimer += STEP * dtScale * spawnSpeedMultiplier(game);
     const interval = Math.max(0.48, 2 - game.score / 40);
     if (game.spawnTimer >= interval) {
       game.spawnTimer = 0;
@@ -597,17 +656,24 @@ export function step(game) {
     enemy.trail = enemy.trail.filter(point => point.age < (ENEMY_TYPES[enemy.type]?.trailLife || ENEMY_TRAIL_LIFE));
     if (game.freezeTimer <= 0) {
       if (!enemy.trail.length) enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
-      enemy.x += enemy.vx * STEP * dtScale;
-      enemy.y += enemy.vy * STEP * dtScale;
+      if (enemy.type >= 7) {
+        for (const event of advanceNewEnemy(enemy, STEP * dtScale * enemySpeedMultiplier(game),
+          { random: () => random(game), player }))
+          emit(game, event.kind, '', { ...event, type: enemy.type, targetId: enemy.id });
+      } else {
+        enemy.x += enemy.vx * STEP * dtScale * enemySpeedMultiplier(game);
+        enemy.y += enemy.vy * STEP * dtScale * enemySpeedMultiplier(game);
+      }
       if (enemy.type === 6 && enemy.pairMember
         && (enemy.vx < 0 ? enemy.x <= .54 : enemy.x >= .54))
         enemy.y += enemy.pairMember * .6 * STEP * dtScale;
       const tail = enemy.trail.at(-1);
-      if (Math.hypot(enemy.x - tail.x, enemy.y - tail.y) >= 0.01) enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
+      if (enemy.type !== 8 && Math.hypot(enemy.x - tail.x, enemy.y - tail.y) >= 0.01)
+        enemy.trail.push({ x: enemy.x, y: enemy.y, age: 0 });
       if (enemy.trail.length > 42) enemy.trail.shift();
     }
     if (checkGraze(game, enemy, true, previousPlayer, previousEnemy) === 'hit') break;
-    const exited = enemy.vx < 0 ? enemy.x < WORLD.left - .5 : enemy.x > WORLD.right + .5;
+    const exited = enemy.type !== 8 && (enemy.vx < 0 ? enemy.x < WORLD.left - .5 : enemy.x > WORLD.right + .5);
     if (!enemy.gone && exited) {
       enemy.gone = true;
       for (const part of enemyParts(enemy)) emit(game, 'enemy-explode', '',
@@ -617,28 +683,13 @@ export function step(game) {
   }
   game.enemies = game.enemies.filter(e => !e.gone && Math.abs(e.x) < WORLD.width * 0.9 && Math.abs(e.y) < 3.8);
   if (game.status !== 'playing') return game;
-  for (const bonus of game.bonuses) {
-    if (game.freezeTimer <= 0) bonus.x += bonus.vx * STEP * dtScale;
-    if (distance(player, bonus) < pickupDistance(game, bonus.radius)) {
-      bonus.gone = true;
-      if (bonus.kind === 'points') score(game, 2, 'bonus', { x: bonus.x, y: bonus.y });
-      else if (bonus.kind === 'freeze') {
-        score(game, 1, 'freeze', { x: bonus.x, y: bonus.y });
-        game.freezeTimer = 7; game.freezeFxTimer = 5.5;
-      }
-      else {
-        score(game, 1, 'bomb', { x: bonus.x, y: bonus.y });
-        game.bombWaves.push({ x: bonus.x, y: bonus.y, age: 0 });
-      }
-    }
-  }
-  game.bonuses = game.bonuses.filter(b => !b.gone && Math.abs(b.x) < WORLD.width * 0.9);
   for (const wave of game.bombWaves) {
     wave.age += STEP * dtScale;
     const scale = 0.1 + 2.5 * 60 * wave.age;
     const radius = 2 * 0.09948128461837769 * scale;
     for (const enemy of game.enemies) {
       if (enemy.gone) continue;
+      if (enemy.type === 8 && !newEnemyCanCollide(enemy)) continue;
       const hit = enemyHitsCircle(enemy, { x: wave.x, y: wave.y, radius });
       if (hit) {
         enemy.gone = true;

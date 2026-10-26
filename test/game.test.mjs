@@ -47,10 +47,13 @@ test('the carried point stays centered on the player while its trail continues',
   assert.equal(game.point.age > 0, true);
 });
 
-test('the invisible enemy disables both trail layers', () => {
+test('the invisible and teleporting enemies disable both trail layers', () => {
   assert.equal(ENEMY_TYPES[4].name, 'EnemySquare5');
   assert.equal(ENEMY_TYPES[4].trailWidth, 0);
-  assert.ok(ENEMY_TYPES.filter((enemy, index) => index !== 4).every(enemy => enemy.trailWidth > 0));
+  assert.equal(ENEMY_TYPES[8].name, 'EnemyBlink');
+  assert.equal(ENEMY_TYPES[8].trailWidth, 0);
+  assert.ok(ENEMY_TYPES.filter((enemy, index) => index !== 4 && index !== 8)
+    .every(enemy => enemy.trailWidth > 0));
 });
 
 test('each developer shortcut grants 2000 points, including after reloading', () => {
@@ -79,6 +82,92 @@ test('special delivery reverses turn direction', () => {
   assert.ok(game.slowTimer > 0);
   turn(game);
   assert.equal(game.player.dir, 3);
+});
+
+test('45-degree delivery toggles the turn angle independently of reverse direction', () => {
+  const game = createGame(); startRound(game);
+  game.player.speed = 0; game.spawnTimer = -100;
+  game.point = { x: game.goal.x, y: game.goal.y, kind: 'angle45', phase: 'carried', returnTimer: 0 };
+  game.player.carrying = true;
+  step(game);
+  assert.equal(game.angle45, true);
+  assert.equal(game.player.clockwise, true);
+  turn(game);
+  assert.equal(game.player.dir, .5);
+  assert.equal(game.events.find(event => event.kind === 'deliver-turn').pointKind, 'angle45');
+  game.point = { x: game.goal.x, y: game.goal.y, kind: 'turn', phase: 'carried', returnTimer: 0 };
+  game.player.carrying = true;
+  step(game);
+  assert.equal(game.player.clockwise, false);
+  turn(game);
+  assert.equal(game.player.dir, 0);
+  game.point = { x: game.goal.x, y: game.goal.y, kind: 'angle45', phase: 'carried', returnTimer: 0 };
+  game.player.carrying = true;
+  step(game);
+  assert.equal(game.angle45, false);
+  turn(game);
+  assert.equal(game.player.dir, 3);
+});
+
+test('new protective balls apply before same-frame enemy contact', () => {
+  for (const [kind, expectedSource] of [['invincible', 'invincible'], ['phase', null]]) {
+    const game = createGame(); startRound(game);
+    game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+    game.point = null; game.spawnTimer = -100;
+    game.enemies = [{ id: 401, x: 0, y: 0, vx: 0, vy: 0, type: 0, radius: .25, near: false }];
+    game.bonuses = [{ x: 0, y: 0, vx: 0, kind, radius: .18 }];
+    step(game);
+    assert.equal(game.status, 'playing', kind);
+    assert.equal(game.score, 1, kind);
+    assert.equal(game.enemies.length, expectedSource ? 0 : 1, kind);
+    assert.equal(game.events.some(event => event.kind === 'enemy-explode' && event.source === expectedSource),
+      Boolean(expectedSource), kind);
+  }
+});
+
+test('bullet-time pickup slows enemy travel while increasing player travel', () => {
+  const baseline = createGame(); const boosted = createGame();
+  for (const game of [baseline, boosted]) {
+    startRound(game);
+    game.player.x = 0; game.player.y = 0; game.player.speed = .04;
+    game.point = null; game.spawnTimer = -100;
+    game.enemies = [{ id: 501, x: 2, y: 0, vx: -2.4, vy: 0, type: 0, radius: .25, near: false }];
+  }
+  boosted.bonuses = [{ x: 0, y: 0, vx: 0, kind: 'bullet', radius: .18 }];
+  step(baseline); step(boosted);
+  assert.ok(boosted.bulletTimer > 4.9);
+  step(baseline); step(boosted);
+  assert.ok(boosted.player.y > baseline.player.y);
+  assert.ok(boosted.enemies[0].x > baseline.enemies[0].x);
+});
+
+test('teleport enemy warning and arrival grace are safe before its active phase', () => {
+  const game = createGame(); startRound(game);
+  game.player.speed = 0; game.score = 12;
+  game.introducedEnemies = [0, 1, 2, 3, 4, 5, 6, 7];
+  game.spawnTimer = 2;
+  step(game);
+  const enemy = game.enemies.find(item => item.type === 8);
+  assert.ok(enemy);
+  assert.equal(enemy.phase, 'warning');
+  assert.equal(game.events.some(event => event.kind === 'enemy-telegraph' && event.targetId === enemy.id), true);
+  game.spawnTimer = -100; game.point = null;
+  game.player.x = enemy.targetX; game.player.y = enemy.targetY;
+  for (let i = 0; i < 60 && enemy.phase === 'warning'; i++) {
+    game.player.speed = 0;
+    game.player.x = enemy.targetX; game.player.y = enemy.targetY;
+    step(game);
+    assert.equal(game.status, 'playing');
+  }
+  assert.equal(enemy.phase, 'grace');
+  for (let i = 0; i < 20 && enemy.phase === 'grace'; i++) {
+    game.player.speed = 0;
+    game.player.x = enemy.targetX; game.player.y = enemy.targetY;
+    step(game);
+    if (enemy.phase === 'grace') assert.equal(game.status, 'playing');
+  }
+  assert.equal(enemy.phase, 'active');
+  assert.equal(game.status, 'dying');
 });
 
 test('special delivery eases down to quarter speed and back', () => {

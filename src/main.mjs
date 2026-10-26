@@ -3,6 +3,7 @@ import { preloadAudio, preloadVoiceSet, preloadCharacterAudio, unlockAudio, play
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 import { normalizeVolumes } from './audio-policy.mjs';
 import { requestLandscape } from './orientation.mjs';
+import { directionVector } from './directions.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -15,9 +16,9 @@ const skinDescriptions = [
   '环绕光圈', '几何碎片', '绕行光点', '像素方块', '青柠星芒',
   '猫爪粒子', '声波扩散', '红色圆球 · 白色断开 T · 专属背景曲', '黑棕圆球 · 黄紫 24 号球衣'
 ];
-const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba4d44', '#b9bdbf'];
+const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba4d44', '#b9bdbf', '#e6ad55', '#8cdbd6'];
 const enemyArt = ['EnemySquare-129.png', 'EnemySquare2-128.png', 'EnemySquare3-131.png', 'EnemySquare4-137.png', 'EnemySquare5-115.png', 'GoalZone1-136.png', 'EnemySquare7-134.png'];
-const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 'warning4-122.png', 'warning5-126.png', 'warning-118.png', 'warning7-150.png'];
+const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 'warning4-122.png', 'warning5-126.png', 'warning-118.png', 'warning7-150.png', 'warning2-146.png'];
 const fxArt = { explode: 'texture-EnemyExplode-71.png', point: 'GoalZone1-136.png', pulse: 'pulse-138.png' };
 const bonusArt = { points: 'Plus2-142.png', freeze: 'Time-125.png', bomb: 'Bomb-132.png' };
 const skinArt = SKINS.map(skin => skin.art);
@@ -165,7 +166,7 @@ function visualEvent(event) {
   const skin = activeSkin(game);
   if (event.kind === 'turn' && game.status === 'playing' && game.roundSkin === 12) {
     tesSpinSpeed *= 1.2;
-    const [headingX, headingY] = [[0, 1], [1, 0], [0, -1], [-1, 0]][event.dir];
+    const { x: headingX, y: headingY } = directionVector(event.heading ?? Math.round(event.dir * 2));
     let sideX = headingY * (game.player.clockwise ? 1 : -1);
     let sideY = -headingX * (game.player.clockwise ? 1 : -1);
     const radius = game.player.size * .82;
@@ -181,14 +182,15 @@ function visualEvent(event) {
       age: 0, life: .32, impact: false });
     if (tesWhips.length > 2) tesWhips.shift();
   }
-  const scoreEvent = ['deliver', 'deliver-turn', 'bonus', 'freeze', 'bomb'].includes(event.kind);
+  const scoreEvent = ['deliver', 'deliver-turn', 'bonus', 'freeze', 'bomb', 'invincible', 'phase', 'bullet'].includes(event.kind);
   if (scoreEvent) labels.push({ x, y, text: event.kind === 'bonus' ? '+2' : '+1', age: 0, life: .75 });
   if ((event.scoreDelta || 0) > 0) scorePulse();
   if (event.kind === 'turn') originalTurnPulse(x, y, skin.color);
   if (event.kind === 'pickup') { burst(x, y, 30, 2, .75, '#f4f4f0', 7, fxArt.point); shake = Math.max(shake, .1); }
   if (event.kind === 'deliver') { burst(x, y, 30, 2, .75, '#ffffff', 7, fxArt.point); shake = Math.max(shake, .1); }
   if (event.kind === 'deliver-turn') {
-    turnExplosions.push({ x: goalX, y: goalY, age: 0, scale: .25, direction: game.player?.clockwise ? 1 : -1 });
+    turnExplosions.push({ x: goalX, y: goalY, age: 0, scale: .25,
+      direction: game.player?.clockwise ? 1 : -1, pointKind: event.pointKind });
     burst(goalX, goalY, 125, .75, .5, '#c7544d', 6, fxArt.point);
   }
   if (event.kind === 'goal-burst') {
@@ -203,6 +205,12 @@ function visualEvent(event) {
     for (const delay of [0, .08, .16, .24]) ring(x, y, '#f7f7f3', delay, .8, 350);
     shake = Math.max(shake, .22);
   }
+  if (['invincible', 'phase', 'bullet'].includes(event.kind)) {
+    const tint = { invincible: '#f6d688', phase: '#a6dadd', bullet: '#b5b6ff' }[event.kind];
+    burst(x, y, 24, 1.8, .65, tint, 5, fxArt.point);
+    ring(x, y, tint, 0, .55, 72);
+  }
+  if (event.kind === 'enemy-teleport') burst(x, y, 14, 1.2, .45, enemyColors[8], 4);
   if (event.kind === 'enemy-explode') {
     shatter(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6);
     shake = Math.max(shake, event.source === 'near-miss' ? .06 : .08);
@@ -430,6 +438,12 @@ function drawVisualEffects() {
     drawTintedArt(fxArt.pulse, '#ba4d44', 0, 0, pulseSize, pulseSize, .294);
     ctx.rotate(fx.age * (fx.direction > 0 ? -4 : -5) * 60 * Math.PI / 180);
     drawArt('pointTurn-130.png', 0, 0, arrowSize, arrowSize, .588 * Math.max(0, 1 - fx.age / 1.2));
+    if (fx.pointKind === 'angle45') {
+      ctx.rotate(-fx.age * (fx.direction > 0 ? -4 : -5) * 60 * Math.PI / 180);
+      ctx.globalAlpha = Math.max(0, 1 - fx.age / 1.2);
+      ctx.fillStyle = '#fff'; ctx.font = '900 24px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('45°', 0, 0);
+    }
     ctx.restore();
   }
   ctx.textAlign = 'center';
@@ -796,13 +810,16 @@ function drawPoint() {
   const remaining = point.phase === 'returning' ? Math.max(0, point.returnTimer / .22) : 1;
   const radius = px(.3) * remaining;
   drawPointPulse(x, y, point.age ?? game.time, 1, remaining);
-  if (point.kind === 'turn') {
+  if (point.kind === 'turn' || point.kind === 'angle45') {
     circle(x, y, radius, '#f0f0ee');
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate((game.player?.clockwise ? -1 : 1) * (point.age || 0) * 2 * 60 * Math.PI / 180);
     if (game.player?.clockwise) ctx.scale(1, -1);
-    if (!drawArt('pointTurn02-124.png', 0, 0, radius * 1.5)) {
+    if (point.kind === 'angle45') {
+      ctx.fillStyle = '#c8544f'; ctx.font = `900 ${Math.max(12, radius * .68)}px Arial`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('45°', 0, 1);
+    } else if (!drawArt('pointTurn02-124.png', 0, 0, radius * 1.5)) {
       ctx.fillStyle = '#c8544f';
       for (let i = 0; i < 4; i++) {
         const angle = i * Math.PI / 2;
@@ -840,6 +857,12 @@ function drawEnemyTrail(enemy, color, config) {
     const freshness = Math.max(0, 1 - point.age / life);
     if (freshness <= 0) continue;
     const alpha = .13 * .784 * freshness * (enemy.fadeAlpha ?? 1);
+    if (enemy.type === 7) {
+      ctx.globalAlpha = alpha;
+      circle(sx(point.x), sy(point.y), px(config.radius * 1.45), color);
+      ctx.globalAlpha = 1;
+      continue;
+    }
     const image = enemyArt[enemy.type] || enemyArt[0];
     if (enemy.type === 5) drawTintedArt(image, color, sx(point.x), sy(point.y), width, height, alpha);
     else if (!drawArt(image, sx(point.x), sy(point.y), width, height, alpha)) {
@@ -860,6 +883,7 @@ function warningScale(initial, age) {
 }
 
 function drawEnemyWarning(enemy, config, y) {
+  if (enemy.type === 8) return;
   const age = enemy.age || 0;
   const alpha = Math.max(0, 1 - age * .6);
   if (alpha <= 0) return;
@@ -885,8 +909,37 @@ function drawEnemies() {
     const x = sx(enemy.x), y = sy(enemy.y), r = px(enemy.radius);
     const fill = enemyColors[enemy.type] || enemyColors[0];
     const config = ENEMY_TYPES[enemy.type] || ENEMY_TYPES[0];
+    if (enemy.type === 8 && enemy.phase === 'warning') {
+      const progress = 1 - Math.max(0, enemy.phaseTimer) / .8;
+      const alpha = Math.sin(Math.PI * Math.min(1, progress)) * .72;
+      const targetX = sx(enemy.targetX), targetY = sy(enemy.targetY);
+      ctx.save();
+      const glow = ctx.createRadialGradient(targetX, targetY, 1, targetX, targetY, 85);
+      glow.addColorStop(0, `rgba(140,219,214,${alpha})`);
+      glow.addColorStop(1, 'rgba(140,219,214,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(targetX, targetY, 85, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = alpha;
+      circle(targetX, targetY, px(config.radius * 1.6), null, fill, 2);
+      ctx.restore();
+      continue;
+    }
     drawEnemyWarning(enemy, config, y);
     drawEnemyTrail(enemy, fill, config);
+    if (enemy.type >= 7) {
+      ctx.save();
+      if (enemy.type === 8 && enemy.phase === 'grace') ctx.globalAlpha = .52;
+      circle(x, y, r * 1.45, fill, '#ffffff99', 2);
+      if (enemy.type === 7) {
+        ctx.strokeStyle = '#fff8'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x - r * .9, y); ctx.lineTo(x, y - r * .45);
+        ctx.lineTo(x + r * .9, y); ctx.stroke();
+      } else {
+        circle(x, y, r * .45, '#e9fffd');
+        circle(x, y, r * 1.75, null, fill, 1);
+      }
+      ctx.restore();
+      continue;
+    }
     const sprite = enemyArt[enemy.type] || enemyArt[0];
     const width = px(config.width * (enemy.type === 5 ? 5 : 1.4));
     const height = px(config.height * (enemy.type === 5 ? 5 : 1.4));
@@ -917,13 +970,17 @@ function drawBonuses() {
     } else if (bonus.kind === 'freeze') {
       circle(x, y, 12, null, '#333336', 2);
       ctx.strokeStyle = '#333336'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x, y); ctx.lineTo(x - 6, y + 6); ctx.stroke();
-    } else {
+    } else if (bonus.kind === 'bomb') {
       ctx.fillStyle = '#333336';
       for (let i = 0; i < 3; i++) {
         const a = i * Math.PI * 2 / 3 - Math.PI / 2;
         ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * 5, y + Math.sin(a) * 5); ctx.arc(x, y, 13, a - .45, a + .45); ctx.closePath(); ctx.fill();
       }
       circle(x, y, 3.5, '#333336');
+    } else {
+      const glyph = { invincible: '✦', phase: '◎', bullet: '≫' }[bonus.kind] || '?';
+      ctx.fillStyle = '#333336'; ctx.font = '900 24px Arial';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(glyph, x, y + 1);
     }
   }
 }
@@ -984,6 +1041,8 @@ function drawPlayer() {
       ctx.globalAlpha = 1;
     }
   }
+  ctx.save();
+  if (game.phaseTimer > 0) ctx.globalAlpha = .48;
   circle(x + 2, y + 3, r, '#0000008c');
   let skinDrawn = false;
   if (skin.art) {
@@ -1005,6 +1064,18 @@ function drawPlayer() {
     if (game.roundSkin === 12) circle(x, y, r * .79, 'rgba(241,241,239,.25)', 'rgba(255,255,255,.75)', 2);
     else circle(x, y, r * .79, '#f1f1ef', color, 2);
   }
+  ctx.restore();
+  if (game.invincibleTimer > 0) {
+    const alpha = .45 + .2 * Math.sin(visualTime * 9);
+    ctx.save(); ctx.globalAlpha = alpha;
+    circle(x, y, r * 1.35, null, '#f7d783', 3);
+    ctx.restore();
+  }
+  if (game.bulletTimer > 0) {
+    ctx.save(); ctx.globalAlpha = .38;
+    circle(x, y, r * 1.57, null, '#aaaaff', 2);
+    ctx.restore();
+  }
   if (!player.clockwise) {
     ctx.fillStyle = '#fff'; ctx.font = '900 16px Arial'; ctx.textAlign = 'center'; ctx.fillText('↶', x, y + r + 22);
   }
@@ -1014,7 +1085,16 @@ function hud() {
   if (!['playing', 'paused', 'dying', 'results'].includes(game.status)) return;
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  if (game.freezeTimer > 0) { ctx.fillStyle = '#a1d7f3'; ctx.font = '900 14px Arial'; ctx.fillText(`FREEZE  ${Math.ceil(game.freezeTimer)}s`, 480, 65); }
+  const modes = [];
+  if (game.freezeTimer > 0) modes.push(`冻结 ${Math.ceil(game.freezeTimer)}s`);
+  if (game.invincibleTimer > 0) modes.push(`无敌 ${Math.ceil(game.invincibleTimer)}s`);
+  if (game.phaseTimer > 0) modes.push(`虚化 ${Math.ceil(game.phaseTimer)}s`);
+  if (game.bulletTimer > 0) modes.push(`子弹时间 ${Math.ceil(game.bulletTimer)}s`);
+  if (game.angle45) modes.push('45°转向');
+  if (modes.length) {
+    ctx.fillStyle = '#d9f2f1'; ctx.font = '900 14px Arial';
+    ctx.fillText(modes.join('   ·   '), 480, 65);
+  }
   ctx.restore();
 }
 

@@ -358,7 +358,7 @@ export function playAudioEvent(kind, event = {}) {
   if (event.skinIndex === 12 && kind === 'turn') preloadCharacterAudio(12);
   if (melodicMode && event.skinIndex === 13) {
     if (kind === 'near-miss' || kind === 'goal-burst' || kind === 'point-spawn') return;
-    const voiceKind = erasure ? 'eliminate' : kind;
+    const voiceKind = erasure ? 'eliminate' : ['invincible', 'phase', 'bullet'].includes(kind) ? 'bonus' : kind;
     if (voiceKind === 'eliminate') {
       const now = Date.now();
       if (now - lastEliminateVoiceAt < 100) return;
@@ -369,7 +369,7 @@ export function playAudioEvent(kind, event = {}) {
   }
   if (voiceReady) {
     if (kind === 'near-miss' || kind === 'goal-burst' || kind === 'point-spawn') return;
-    const voiceKind = erasure ? 'eliminate' : kind;
+    const voiceKind = erasure ? 'eliminate' : ['invincible', 'phase', 'bullet'].includes(kind) ? 'bonus' : kind;
     if (voiceKind === 'eliminate') {
       const now = Date.now();
       if (now - lastEliminateVoiceAt < 100) return;
@@ -406,6 +406,9 @@ export function playAudioEvent(kind, event = {}) {
       else explode();
       break;
     case 'bonus': sample(93); break;
+    case 'invincible': sample(93); sample(98, { pitch: 1.12, gain: .35 }); break;
+    case 'phase': sample(93); sample(92, { pitch: 1.18, gain: .32 }); break;
+    case 'bullet': sample(93); sample(99, { pitch: 1.16, gain: .3 }); break;
     case 'freeze': sample(93); sample(92, { pitch: .52, gain: .85 }); break;
     case 'bomb': sample(93); sample(88, { gain: .5 }); explode(); break;
     case 'die': explode(); sample(88, { gain: .5 }); sample(89); break;
