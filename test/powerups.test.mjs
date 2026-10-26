@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { chooseBonusKind, applyPowerup, stepPowerups, playerSpeedMultiplier,
   enemySpeedMultiplier, spawnSpeedMultiplier, enemyContactEffect } from '../src/powerups.mjs';
 
-test('the existing reward pool stays intact until new bonus score thresholds', () => {
-  const game = { score: 3 };
+test('the existing reward pool stays intact until score and wave thresholds', () => {
+  const game = { score: 30, wave: 5 };
   assert.equal(chooseBonusKind(game, () => 0), 'points');
   assert.equal(chooseBonusKind(game, () => 0.5), 'freeze');
   assert.equal(chooseBonusKind(game, () => 0.999), 'bomb');
@@ -12,11 +12,11 @@ test('the existing reward pool stays intact until new bonus score thresholds', (
 });
 
 test('each unlocked effect debuts at its first eligible reward slot', () => {
-  const game = { score: 4 };
+  const game = { score: 10, wave: 6 };
   assert.equal(chooseBonusKind(game, () => 0), 'invincible');
-  game.score = 8;
+  game.score = 18; game.wave = 10;
   assert.equal(chooseBonusKind(game, () => 0), 'phase');
-  game.score = 12;
+  game.score = 26; game.wave = 14;
   assert.equal(chooseBonusKind(game, () => 0), 'bullet');
   assert.deepEqual(game.bonusIntroduced, ['invincible', 'phase', 'bullet']);
   assert.equal(chooseBonusKind(game, () => 0.999), 'bullet');
@@ -24,7 +24,7 @@ test('each unlocked effect debuts at its first eligible reward slot', () => {
 });
 
 test('crossing several thresholds at once introduces each new effect once', () => {
-  const game = { score: 12 };
+  const game = { score: 30, wave: 18 };
   const kinds = Array.from({ length: 3 }, () => chooseBonusKind(game, () => 0.999));
   assert.deepEqual(kinds, ['invincible', 'phase', 'bullet']);
 });

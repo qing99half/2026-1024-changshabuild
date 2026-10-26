@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, startRound, startTutorial, skipTutorial, step, turn, selectSkin, buySkin, activateDeveloperMode, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES, grazeBounds } from '../src/core.mjs';
+import { createGame, startRound, startTestLevel, testTriggerBonus, testTriggerPoint,
+  testSpawnEnemy, testClearEnemies, startTutorial, skipTutorial, step, turn, selectSkin,
+  buySkin, activateDeveloperMode, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES,
+  ENEMY_UNLOCK_SCORES, ENEMY_UNLOCK_WAVES, grazeBounds } from '../src/core.mjs';
 import { SKINS, isSkinRevealed } from '../src/skins.mjs';
 
 test('one input turns 90 degrees and four inputs complete a circuit', () => {
@@ -187,8 +190,9 @@ test('bullet-time pickup slows enemy travel while increasing player travel', () 
 
 test('teleport enemy warning and arrival grace are safe before its active phase', () => {
   const game = createGame(); startRound(game);
-  game.player.speed = 0; game.score = 12;
+  game.player.speed = 0; game.score = 28;
   game.introducedEnemies = [0, 1, 2, 3, 4, 5, 6, 7];
+  game.spawnSlots = 68;
   game.spawnTimer = 2;
   step(game);
   const enemy = game.enemies.find(item => item.type === 8);
@@ -467,12 +471,13 @@ test('all tutorial stages can be completed without granting currency', () => {
   assert.equal(game.stylePoints, 0);
 });
 
-test('new enemy classes debut as their score thresholds open', () => {
+test('new enemy classes debut only after score and wave thresholds open', () => {
   const game = createGame();
   startRound(game);
   game.player.speed = 0;
   for (let type = 0; type < 7; type++) {
-    game.score = type * 2;
+    game.score = ENEMY_UNLOCK_SCORES[type];
+    game.spawnSlots = (ENEMY_UNLOCK_WAVES[type] - 1) * 4;
     game.spawnTimer = 2;
     game.spawned = 0;
     step(game);
@@ -515,7 +520,8 @@ test('the white pair spawns as two independently moving and removable enemies', 
   const game = createGame();
   startRound(game);
   game.player.speed = 0;
-  game.score = 12;
+  game.score = 18;
+  game.spawnSlots = 48;
   game.introducedEnemies = [0, 1, 2, 3, 4, 5];
   game.spawnTimer = 2;
   step(game);
@@ -664,6 +670,49 @@ test('the seventh hazard spawn is replaced by one bonus', () => {
   assert.equal(game.enemies.length, 0);
   assert.equal(game.bonuses.length, 1);
   assert.equal(game.spawned, 0);
+});
+
+test('a score jump shortens a pending reward gap but never makes a consecutive reward', () => {
+  const game = createGame();
+  startRound(game);
+  game.point = null;
+  game.player.speed = 0;
+  game.spawned = 4;
+  game.spawnSlots = 11;
+  game.nextBonusAt = 18;
+  game.score = 32;
+  game.spawnTimer = 2;
+  step(game);
+  assert.equal(game.bonuses.length, 1);
+  assert.equal(game.spawned, 0);
+  assert.equal(game.nextBonusAt, 5);
+  game.spawnTimer = 2;
+  step(game);
+  assert.equal(game.bonuses.length, 1);
+  assert.equal(game.spawned, 1);
+});
+
+test('test level directly triggers special effects and enemies without saving progress', () => {
+  const game = createGame();
+  startTestLevel(game);
+  assert.equal(game.testLevel, true);
+  assert.equal(game.status, 'playing');
+  assert.equal(testTriggerBonus(game, 'invincible'), true);
+  assert.ok(game.invincibleTimer > 0);
+  assert.equal(game.bonuses[0].kind, 'invincible');
+  assert.equal(testTriggerPoint(game, 'angle45'), true);
+  assert.equal(game.angle45, true);
+  assert.equal(testSpawnEnemy(game, 8), true);
+  assert.equal(game.enemies[0].phase, 'warning');
+  assert.equal(game.spawnSlots, 0);
+  for (let i = 0; i < 180; i++) step(game);
+  assert.equal(game.status, 'playing');
+  assert.equal(game.gamesPlayed, 0);
+  assert.equal(game.totalPoints, 0);
+  assert.equal(testClearEnemies(game), true);
+  assert.equal(game.enemies.length, 0);
+  startRound(game);
+  assert.equal(game.testLevel, false);
 });
 
 test('legacy progress reveals secret skins without losing previously spent points', () => {

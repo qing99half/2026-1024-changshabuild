@@ -14,6 +14,38 @@
     <div id="stage" aria-label="游戏场地">
       <canvas id="game" width="960" height="540" aria-label="横屏游戏画面：点击或按空格使圆球转向"></canvas>
       <button id="pause" class="icon-button" type="button" aria-label="暂停游戏">Ⅱ</button>
+      <section id="test-level" class="test-level" hidden aria-label="效果测试关卡">
+        <div class="test-heading"><strong>效果测试关卡</strong><small>Ctrl + A + B</small></div>
+        <p>点击球触发实际效果；点击敌人将其送入场内。测试分数不计入存档。</p>
+        <div class="test-label">特殊球与得分点</div>
+        <div class="test-grid">
+          <button type="button" data-test-bonus="points">+2</button>
+          <button type="button" data-test-bonus="freeze">冻结</button>
+          <button type="button" data-test-bonus="bomb">炸弹</button>
+          <button type="button" data-test-bonus="invincible">无敌</button>
+          <button type="button" data-test-bonus="phase">虚化</button>
+          <button type="button" data-test-bonus="bullet">子弹时间</button>
+          <button type="button" data-test-point="turn">左转点</button>
+          <button type="button" data-test-point="angle45">45°点</button>
+        </div>
+        <div class="test-label">敌人</div>
+        <div class="test-grid">
+          <button type="button" data-test-enemy="0">方块 1</button>
+          <button type="button" data-test-enemy="1">宽方块</button>
+          <button type="button" data-test-enemy="2">高方块</button>
+          <button type="button" data-test-enemy="3">脉冲</button>
+          <button type="button" data-test-enemy="4">隐身</button>
+          <button type="button" data-test-enemy="5">微型</button>
+          <button type="button" data-test-enemy="6">白色双球</button>
+          <button type="button" data-test-enemy="7">45°弹球</button>
+          <button type="button" data-test-enemy="8">闪现球</button>
+        </div>
+        <div class="test-actions">
+          <button id="test-clear" type="button">清除敌人</button>
+          <button id="test-reset" type="button">重置</button>
+          <button id="test-exit" type="button">退出</button>
+        </div>
+      </section>
       <div id="developer-badge" class="developer-badge" hidden>DEV · 2000 点已到账</div>
       <section id="menu" class="screen" aria-labelledby="menu-title">
         <div class="menu-content">

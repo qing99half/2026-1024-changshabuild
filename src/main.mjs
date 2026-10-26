@@ -1,10 +1,14 @@
-import { createGame, startRound, startTutorial, skipTutorial, step, turn, togglePause, selectSkin, skinCost, buySkin, activateDeveloperMode, snapshotProgress, STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
+import { createGame, startRound, startTestLevel, testTriggerBonus, testTriggerPoint,
+  testSpawnEnemy, testClearEnemies, startTutorial, skipTutorial, step, turn, togglePause,
+  selectSkin, skinCost, buySkin, activateDeveloperMode, snapshotProgress,
+  STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
 import { preloadAudio, preloadVoiceSet, preloadCharacterAudio, unlockAudio, playAudioEvent, previewEliminate, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode, setVolumeLevels } from './audio.mjs';
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 import { normalizeVolumes } from './audio-policy.mjs';
 import { requestLandscape } from './orientation.mjs';
 import { directionVector } from './directions.mjs';
-import { drawPowerupBackground, drawPowerupForeground, drawPowerupPlayerAura } from './powerup-visuals.mjs';
+import { bulletTimeVisualState, drawBulletTimeWorld, drawBulletTimeMatte,
+  drawPowerupBackground, drawPowerupForeground, drawPowerupPlayerAura } from './powerup-visuals.mjs';
 
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -21,7 +25,8 @@ const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba
 const enemyArt = ['EnemySquare-129.png', 'EnemySquare2-128.png', 'EnemySquare3-131.png', 'EnemySquare4-137.png', 'EnemySquare5-115.png', 'GoalZone1-136.png', 'EnemySquare7-134.png'];
 const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 'warning4-122.png', 'warning5-126.png', 'warning-118.png', 'warning7-150.png', 'warning2-146.png'];
 const fxArt = { explode: 'texture-EnemyExplode-71.png', point: 'GoalZone1-136.png', pulse: 'pulse-138.png' };
-const bonusArt = { points: 'Plus2-142.png', freeze: 'Time-125.png', bomb: 'Bomb-132.png' };
+const bonusArt = { points: 'Plus2-142.png', freeze: 'Time-125.png', bomb: 'Bomb-132.png',
+  bullet: 'assets/bonuses/bullet-time-spiral.svg' };
 const skinArt = SKINS.map(skin => skin.art);
 const artUrl = file => file.startsWith('assets/') ? file : `assets/original/${file}`;
 const artFiles = ['BackCircle-154.png', 'GoalZone-133.png', 'pointTurn02-124.png', 'pointTurn-130.png', ...enemyArt, ...warningArt,
@@ -71,6 +76,7 @@ let pointTrailSource = null;
 let pointTrailClock = 0;
 let skinFeedback = '';
 let developerShortcutUntil = 0;
+let testShortcutUntil = 0;
 
 function resetTesSpin() {
   tesSpinAngle = 0;
@@ -124,7 +130,8 @@ function consumeEvents() {
   }
 }
 
-function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, delay = 0, tintSprite = false, shape = null) {
+function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, delay = 0,
+  tintSprite = false, shape = null, enemyFx = false) {
   if (reducedMotion) count = Math.ceil(count * .3);
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
@@ -132,11 +139,12 @@ function burst(x, y, count, speed, lifetime, color, radius = 3, sprite = null, d
     particles.push({ x, y, vx: Math.cos(angle) * velocity, vy: Math.sin(angle) * velocity,
       age: -delay, life: lifetime * (.65 + Math.random() * .55),
       color: Array.isArray(color) ? color[i % color.length] : color,
-      radius: radius * (.55 + Math.random()), sprite, tintSprite, shape, rotation: angle });
+      radius: radius * (.55 + Math.random()), sprite, tintSprite, shape, rotation: angle,
+      enemyFx, monochromeTone: i % 2 ? '#000000' : '#ffffff' });
   }
 }
 
-function shatter(x, y, count, speed, lifetime, color, radius) {
+function shatter(x, y, count, speed, lifetime, color, radius, enemyFx = false) {
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const velocity = speed * (.45 + Math.random() * .75);
@@ -144,12 +152,14 @@ function shatter(x, y, count, speed, lifetime, color, radius) {
       gravity: 9.81, age: 0, life: lifetime,
       color: Array.isArray(color) ? color[i % color.length] : color,
       radius: radius * (.55 + Math.random()),
-      sprite: fxArt.explode, tintSprite: true, rotation: angle });
+      sprite: fxArt.explode, tintSprite: true, rotation: angle,
+      enemyFx, monochromeTone: i % 2 ? '#000000' : '#ffffff',
+      monochromeShape: i % 3 ? 'pixel' : 'diamond' });
   }
 }
 
-function ring(x, y, color, delay = 0, life = .5, maxRadius = 45) {
-  rings.push({ x, y, color, age: -delay, life, maxRadius });
+function ring(x, y, color, delay = 0, life = .5, maxRadius = 45, enemyFx = false) {
+  rings.push({ x, y, color, age: -delay, life, maxRadius, enemyFx });
 }
 
 function originalTurnPulse(x, y, color) {
@@ -207,15 +217,16 @@ function visualEvent(event) {
     shake = Math.max(shake, .22);
   }
   if (['invincible', 'phase', 'bullet'].includes(event.kind)) {
-    const tint = { invincible: '#f6d688', phase: '#a6dadd', bullet: '#b5b6ff' }[event.kind];
+    const tint = { invincible: '#f6d688', phase: '#a6dadd', bullet: '#ffffff' }[event.kind];
     burst(x, y, 24, 1.8, .65, tint, 5, fxArt.point);
     ring(x, y, tint, 0, .55, 72);
   }
-  if (event.kind === 'enemy-teleport') burst(x, y, 14, 1.2, .45, enemyColors[8], 4);
+  if (event.kind === 'enemy-teleport') burst(x, y, 14, 1.2, .45, enemyColors[8], 4,
+    null, 0, false, null, true);
   if (event.kind === 'phase-pass') ring(x, y, '#a6dadd', 0, .32, 34);
   if (event.kind === 'enemy-explode') {
-    shatter(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6);
-    if (event.source === 'invincible') ring(x, y, '#f6d688', 0, .3, 46);
+    shatter(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6, true);
+    if (event.source === 'invincible') ring(x, y, '#f6d688', 0, .3, 46, true);
     shake = Math.max(shake, event.source === 'near-miss' ? .06 : .08);
   }
   if (event.kind === 'near-miss') {
@@ -232,7 +243,7 @@ function visualEvent(event) {
   if (event.kind === 'die') {
     shatter(x, y, 75, 5, 3, skin.shatterColors || skin.color, 8);
     for (const enemy of event.enemies || [])
-      shatter(enemy.x, enemy.y, 50, 4, 2, enemyColors[enemy.type] || '#ffffff', 6);
+      shatter(enemy.x, enemy.y, 50, 4, 2, enemyColors[enemy.type] || '#ffffff', 6, true);
     shake = Math.max(shake, .15);
   }
   skinVisualEvent(event.kind, x, y, skin);
@@ -412,23 +423,27 @@ function drawVisualEffects() {
     if (p.age < 0) continue;
     ctx.globalAlpha = Math.max(0, 1 - p.age / p.life) * (p.opacity ?? 1);
     const size = p.radius * 2 * (1 - p.age / p.life);
-    const drawn = p.sprite && (p.tintSprite
+    const monochromeEnemy = p.enemyFx && game.bulletTimer > 0;
+    const drawn = !monochromeEnemy && p.sprite && (p.tintSprite
       ? drawTintedArt(p.sprite, p.color, sx(p.x), sy(p.y), size)
       : drawArt(p.sprite, sx(p.x), sy(p.y), size));
-    if (!drawn) drawSkinParticle(p, sx(p.x), sy(p.y), size / 2);
+    if (!drawn) drawSkinParticle(monochromeEnemy
+      ? { ...p, color: p.monochromeTone, shape: p.monochromeShape || 'pixel' } : p,
+      sx(p.x), sy(p.y), size / 2);
   }
   for (const r of rings) {
     if (r.age < 0) continue;
     const progress = r.age / r.life;
+    const color = r.enemyFx && game.bulletTimer > 0 ? '#ffffff' : r.color;
     if (r.originalPulse) {
       ctx.globalAlpha = 1;
       const size = px(1.3 * (.689189136 + .310810864 * progress));
       const alpha = progress < .476 ? 1 : (1 - progress) / .524;
-      drawTintedArt(fxArt.pulse, r.color, sx(r.x), sy(r.y), size, size, alpha);
+      drawTintedArt(fxArt.pulse, color, sx(r.x), sy(r.y), size, size, alpha);
       continue;
     }
     ctx.globalAlpha = (1 - progress) * .75;
-    circle(sx(r.x), sy(r.y), 5 + r.maxRadius * progress, null, r.color, 2.5 * (1 - progress) + .5);
+    circle(sx(r.x), sy(r.y), 5 + r.maxRadius * progress, null, color, 2.5 * (1 - progress) + .5);
   }
   ctx.globalAlpha = 1;
   for (const fx of turnExplosions) {
@@ -501,10 +516,11 @@ function drawGrazeFlashes() {
 
 function syncUI() {
   $('settings').hidden = !settingsOpen;
+  $('test-level').hidden = !game.testLevel || game.status !== 'playing' || settingsOpen;
   $('menu').hidden = game.status !== 'menu';
   $('paused').hidden = game.status !== 'paused';
   $('results').hidden = game.status !== 'results';
-  $('pause').hidden = game.status !== 'playing';
+  $('pause').hidden = game.status !== 'playing' || game.testLevel;
   $('tutorial').hidden = game.status !== 'tutorial';
   if (game.status === 'tutorial') {
     const stage = game.tutorial.stage;
@@ -587,6 +603,44 @@ function play(forceTutorial = false) {
   startMusic(game.roundSkin, { restart: Boolean(activeSkin(game).music) });
 }
 
+function enterTestLevel() {
+  settingsOpen = false;
+  preloadAudio();
+  unlockAudio();
+  particles.length = 0; rings.length = 0; scorePulses.length = 0; pointTrailParticles.length = 0;
+  bonusParticleClocks.clear();
+  turnExplosions.length = 0; labels.length = 0; grazeFlashes.length = 0;
+  pointTrailSource = null; pointTrailClock = 0; shake = 0;
+  startTestLevel(game);
+  resetTesSpin();
+  if (melodicAudio) preloadVoiceSet(activeSkin(game).voice);
+  if (game.roundSkin === 12 || (melodicAudio && game.roundSkin === 13)) preloadCharacterAudio(game.roundSkin);
+  accumulator = 0;
+  consumeEvents();
+  syncUI();
+  startMusic(game.roundSkin, { restart: Boolean(activeSkin(game).music) });
+}
+
+function exitTestLevel() {
+  game.testLevel = false;
+  game.status = 'menu';
+  game.events.length = 0;
+  pauseMusic();
+  syncUI();
+}
+
+$('test-level').addEventListener('click', event => {
+  const target = event.target.closest('button');
+  if (!target) return;
+  if (target.dataset.testBonus) testTriggerBonus(game, target.dataset.testBonus);
+  else if (target.dataset.testPoint) testTriggerPoint(game, target.dataset.testPoint);
+  else if (target.dataset.testEnemy !== undefined) testSpawnEnemy(game, Number(target.dataset.testEnemy));
+  else if (target.id === 'test-clear') testClearEnemies(game);
+  else if (target.id === 'test-reset') { enterTestLevel(); return; }
+  else if (target.id === 'test-exit') { exitTestLevel(); return; }
+  consumeEvents();
+});
+
 $('start').addEventListener('click', () => play());
 $('restart').addEventListener('click', () => play());
 $('replay-tutorial').addEventListener('click', () => play(true));
@@ -661,6 +715,18 @@ canvas.addEventListener('pointerdown', event => {
   if (turn(game)) consumeEvents();
 });
 window.addEventListener('keydown', event => {
+  if (event.ctrlKey && event.code === 'KeyA') {
+    event.preventDefault();
+    if (!event.repeat) testShortcutUntil = performance.now() + 1200;
+    return;
+  }
+  if (event.ctrlKey && event.code === 'KeyB' && performance.now() <= testShortcutUntil) {
+    event.preventDefault();
+    if (event.repeat) return;
+    testShortcutUntil = 0;
+    if (game.testLevel) exitTestLevel(); else enterTestLevel();
+    return;
+  }
   if (settingsOpen) {
     if (event.code === 'Escape') { event.preventDefault(); closeSettings(); }
     return;
@@ -982,6 +1048,14 @@ function drawBonuses() {
   for (const bonus of game.bonuses) {
     const x = sx(bonus.x), y = sy(bonus.y);
     drawPointPulse(x, y, visualTime, 43 / px(.6));
+    if (bonus.kind === 'bullet' && art.get(bonusArt.bullet)?.complete) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(game.time * (reducedMotion ? Math.PI / 4 : Math.PI));
+      ctx.filter = 'grayscale(1)';
+      if (drawArt(bonusArt.bullet, 0, 0, 43)) { ctx.restore(); continue; }
+      ctx.restore();
+    }
     if (drawArt(bonusArt[bonus.kind], x, y, 43)) continue;
     circle(x, y, 18, '#f1f1ed', '#333336', 3);
     if (bonus.kind === 'points') {
@@ -1086,8 +1160,8 @@ function drawPlayer() {
   ctx.restore();
   drawPowerupPlayerAura(ctx, game, visualTime, reducedMotion, x, y, r);
   if (game.bulletTimer > 0) {
-    ctx.save(); ctx.globalAlpha = .38;
-    circle(x, y, r * 1.57, null, '#aaaaff', 2);
+    ctx.save(); ctx.globalAlpha = .28 * (bulletTimeVisualState(game)?.strength ?? 1);
+    circle(x, y, r * 1.57, null, '#ffffff', 2);
     ctx.restore();
   }
   if (!player.clockwise) {
@@ -1106,7 +1180,8 @@ function hud() {
   if (game.bulletTimer > 0) modes.push(`子弹时间 ${Math.ceil(game.bulletTimer)}s`);
   if (game.angle45) modes.push('45°转向');
   if (modes.length) {
-    ctx.fillStyle = '#d9f2f1'; ctx.font = '900 14px Arial';
+    ctx.fillStyle = game.bulletTimer > 0 ? '#f4f4f4' : '#d9f2f1';
+    ctx.font = '900 14px Arial';
     ctx.fillText(modes.join('   ·   '), 480, 65);
   }
   ctx.restore();
@@ -1115,7 +1190,7 @@ function hud() {
 function render() {
   ctx.save();
   if (shake > 0 && !reducedMotion) ctx.translate((Math.random() * 2 - 1) * px(shake), (Math.random() * 2 - 1) * px(shake));
-  background();
+  drawBulletTimeWorld(ctx, game, background);
   drawPowerupBackground(ctx, game, visualTime, reducedMotion);
   drawScorePulses();
   drawBackgroundScore();
@@ -1126,8 +1201,13 @@ function render() {
     circle(670, 310, 25, '#d65a55');
     ctx.globalAlpha = 1;
   } else {
-    drawGoal(); drawEnemies(); drawBonuses(); drawTesWhips(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes();
-    if (game.freezeTimer > 0) { ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540); }
+    drawGoal();
+    drawBulletTimeWorld(ctx, game, drawEnemies);
+    drawBulletTimeMatte(ctx, game, reducedMotion);
+    drawBonuses(); drawTesWhips(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes();
+    if (game.freezeTimer > 0 && game.bulletTimer <= 0) {
+      ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540);
+    }
     drawPowerupForeground(ctx, game, visualTime, reducedMotion);
     hud();
   }

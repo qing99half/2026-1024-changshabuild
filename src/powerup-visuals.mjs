@@ -2,6 +2,37 @@ const WIDTH = 960;
 const HEIGHT = 540;
 const EFFECT_DURATION = 5;
 
+export function bulletTimeVisualState(game) {
+  if (!game || !['playing', 'paused'].includes(game.status) || !(game.bulletTimer > 0)) return null;
+  const remaining = Math.min(EFFECT_DURATION, game.bulletTimer);
+  const elapsed = EFFECT_DURATION - remaining;
+  return { elapsed, strength: Math.max(0, Math.min(1, elapsed / .2, remaining / .25)) };
+}
+
+// Scope desaturation to world layers; the player and collectible sprites are drawn later.
+export function drawBulletTimeWorld(ctx, game, draw) {
+  const state = bulletTimeVisualState(game);
+  if (!state || state.strength <= 0) return draw();
+  ctx.save();
+  ctx.filter = `grayscale(${state.strength})`;
+  try { return draw(); }
+  finally { ctx.restore(); }
+}
+
+export function drawBulletTimeMatte(ctx, game, reducedMotion = false) {
+  const state = bulletTimeVisualState(game);
+  if (!state || state.strength <= 0) return;
+  ctx.save();
+  ctx.fillStyle = `rgba(80, 80, 80, ${.11 * state.strength})`;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  if (!reducedMotion) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${.018 * state.strength})`;
+    for (let i = 0; i < 5; i++)
+      ctx.fillRect(0, (state.elapsed * 35 + i * 109) % HEIGHT, WIDTH, 1);
+  }
+  ctx.restore();
+}
+
 // The visual state is derived from game state so pausing also pauses the pulse.
 export function powerupVisualState(game, time, reducedMotion = false) {
   if (!game || !['playing', 'paused'].includes(game.status)) return null;
@@ -40,6 +71,7 @@ function edgeGradients(ctx, state, strength) {
 }
 
 export function drawPowerupBackground(ctx, game, time, reducedMotion = false) {
+  if (bulletTimeVisualState(game)) return;
   const state = powerupVisualState(game, time, reducedMotion);
   if (!state) return;
   ctx.save();
@@ -50,6 +82,7 @@ export function drawPowerupBackground(ctx, game, time, reducedMotion = false) {
 }
 
 export function drawPowerupForeground(ctx, game, time, reducedMotion = false) {
+  if (bulletTimeVisualState(game)) return;
   const state = powerupVisualState(game, time, reducedMotion);
   if (!state) return;
   ctx.save();

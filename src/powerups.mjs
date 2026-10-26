@@ -1,14 +1,16 @@
 const EXISTING_BONUSES = Object.freeze(['points', 'freeze', 'bomb']);
 const NEW_BONUSES = Object.freeze([
-  { kind: 'invincible', score: 4 },
-  { kind: 'phase', score: 8 },
-  { kind: 'bullet', score: 12 }
+  { kind: 'invincible', score: 10, wave: 6 },
+  { kind: 'phase', score: 18, wave: 10 },
+  { kind: 'bullet', score: 26, wave: 14 }
 ]);
 const EFFECT_DURATION = 5;
 
 export function chooseBonusKind(game, random) {
   game.bonusIntroduced ??= [];
-  const available = NEW_BONUSES.filter(bonus => game.score >= bonus.score);
+  const available = NEW_BONUSES.filter(bonus => game.classicSpawns
+    ? game.score >= { invincible: 4, phase: 8, bullet: 12 }[bonus.kind]
+    : game.score >= bonus.score && game.wave >= bonus.wave);
   const debut = available.find(bonus => !game.bonusIntroduced.includes(bonus.kind));
   if (debut) {
     game.bonusIntroduced.push(debut.kind);

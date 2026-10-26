@@ -65,6 +65,17 @@ h1 span { color: #db5b55; }
 .settings-modal #preview-eliminate { margin-top: .5cqw; }
 .settings-close { min-width: 16cqw; min-height: 42px; margin-top: .5cqw !important; }
 .developer-badge { position: absolute; z-index: 7; top: 2%; right: 2%; padding: .45em .75em; border: 1px solid #f1c98e88; border-radius: .35cqw; color: #ffe4b5; background: #2a2522d9; font-size: clamp(10px, 1.05cqw, 15px); letter-spacing: .04em; pointer-events: none; }
+.test-level { position: absolute; z-index: 5; top: 2%; left: 2%; width: 29%; max-height: 96%; overflow-y: auto; padding: .9cqw; border: 1px solid #ffffff52; border-radius: .7cqw; color: #f7f4f1; background: #202124e8; box-shadow: 0 1cqw 3cqw #0008; scrollbar-width: thin; }
+.test-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .5em; }
+.test-heading strong { font-size: clamp(13px, 1.5cqw, 20px); }
+.test-heading small { color: #f2ae9f; font-size: clamp(9px, .95cqw, 13px); }
+.test-level p { margin: .5cqw 0; color: #c8c7c6; font-size: clamp(9px, 1.05cqw, 14px); line-height: 1.35; }
+.test-label { margin: .65cqw 0 .4cqw; color: #f0aaa1; font-size: clamp(10px, 1.1cqw, 15px); font-weight: 800; }
+.test-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .38cqw; }
+.test-grid button, .test-actions button { min-height: 29px; padding: .35em .4em; border: 1px solid #ffffff35; border-radius: .3cqw; color: #f4efec; background: #ffffff12; font: inherit; font-size: clamp(9px, 1.05cqw, 14px); cursor: pointer; }
+.test-grid button:hover, .test-grid button:focus-visible, .test-actions button:hover, .test-actions button:focus-visible { border-color: #f09a8f; background: #ad5b5044; }
+.test-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .38cqw; margin-top: .75cqw; }
+.test-actions #test-exit { border-color: #e68b8077; }
 .tutorial-hud { position: absolute; z-index: 4; inset: 0; pointer-events: none; }
 .tutorial-card { position: absolute; top: 3%; left: 50%; width: min(50cqw, 520px); padding: 1.1cqw 1.8cqw; transform: translateX(-50%); border: 1px solid #ffffff40; border-radius: .5cqw; background: #202023dc; box-shadow: 0 .7cqw 2cqw #0006; text-align: center; }
 .tutorial-card .eyebrow { display: flex; align-items: center; justify-content: space-between; font-size: clamp(8px, 1cqw, 13px); }
