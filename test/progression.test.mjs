@@ -9,9 +9,9 @@ test('four spawn slots form a wave, including reward slots', () => {
   assert.deepEqual(ENEMY_UNLOCK_WAVES, [1, 3, 5, 7, 9, 11, 13, 15, 18]);
 });
 
-test('reward gaps decrease with score and stop at five slots', () => {
+test('reward gaps decrease with score and remain frequent late in a run', () => {
   assert.deepEqual([0, 8, 16, 24, 32, 100].map(bonusGapRange),
-    [[14, 18], [10, 14], [8, 10], [6, 8], [5, 5], [5, 5]]);
+    [[8, 10], [7, 9], [6, 8], [5, 6], [4, 5], [4, 5]]);
   for (const score of [0, 8, 16, 24, 32]) {
     const [min, max] = bonusGapRange(score);
     assert.equal(nextBonusGap(score, () => 0), min);

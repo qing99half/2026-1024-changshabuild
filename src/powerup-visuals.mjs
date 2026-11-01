@@ -45,8 +45,8 @@ export function powerupVisualState(game, time, reducedMotion = false) {
   const pulse = reducedMotion ? .5 + (wave - .5) * .22 : wave;
   return {
     kind, pulse, fade, animationTime: activeTime,
-    tintAlpha: (kind === 'invincible' ? .055 + .045 * pulse : .065 + .045 * pulse) * fade,
-    edgeAlpha: (kind === 'invincible' ? .12 + .06 * pulse : .11 + .055 * pulse) * fade,
+    tintAlpha: (kind === 'invincible' ? .075 + .05 * pulse : .085 + .05 * pulse) * fade,
+    edgeAlpha: (kind === 'invincible' ? .17 + .08 * pulse : .16 + .07 * pulse) * fade,
     ringAlpha: (.56 + .27 * pulse) * fade,
     rgb: kind === 'invincible' ? '248, 195, 81' : '128, 225, 232'
   };
@@ -108,7 +108,7 @@ export function drawPowerupPlayerAura(ctx, game, time, reducedMotion = false, x,
   const animationTime = state.animationTime;
   if (state.kind === 'invincible') {
     ctx.shadowColor = `rgba(${state.rgb}, ${state.ringAlpha * .7})`;
-    ctx.shadowBlur = reducedMotion ? 8 : 16;
+    ctx.shadowBlur = reducedMotion ? 10 : 22;
     ring(ctx, x, y, r * (1.24 + .09 * state.pulse),
       `rgba(${state.rgb}, ${state.ringAlpha})`, reducedMotion ? 3 : 4);
     ctx.shadowBlur = 0;
@@ -125,7 +125,7 @@ export function drawPowerupPlayerAura(ctx, game, time, reducedMotion = false, x,
       ctx.fill();
     }
   } else {
-    const displacement = reducedMotion ? 2 : 4 + 1.5 * state.pulse;
+    const displacement = reducedMotion ? 3 : 6 + 2 * state.pulse;
     for (const side of [-1, 1]) {
       ctx.beginPath();
       ctx.arc(x + side * displacement, y - side * displacement * .35, r * 1.02, 0, Math.PI * 2);

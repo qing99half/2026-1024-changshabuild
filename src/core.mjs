@@ -6,8 +6,10 @@ import { chooseBonusKind, applyPowerup, stepPowerups, playerSpeedMultiplier, ene
 import { createNewEnemy, advanceNewEnemy, newEnemyCanCollide } from './new-enemies.mjs';
 import { ENEMY_UNLOCK_SCORES, ENEMY_UNLOCK_WAVES, waveForSpawnSlot,
   bonusGapRange, nextBonusGap, enemySpawnInterval } from './progression.mjs';
+import { validDifficulty, adaptiveAssist, spawnGapMultiplier, rewardForRound, recordRound } from './difficulty.mjs';
 
 export const STEP = 1 / 60;
+export const CHARGE_SEGMENTS = 6;
 export const ENEMY_TRAIL_LIFE = 0.65;
 // The Unity camera has a 3.84 world-unit orthographic half-height; 16:9 gives this field.
 export const WORLD = Object.freeze({ width: 13.653333333333334, height: 7.68, left: -6.826666666666667, right: 6.826666666666667, top: 3.84, bottom: -3.84 });
@@ -94,6 +96,9 @@ export function createGame(saved = {}, seed = 0x1024) {
     status: 'menu', seed: seed >>> 0, events: [], toast: null,
     score: 0, lastScore: 0, lastTime: 0, best: Number(saved.best) || 0,
     stylePoints: 0, lastStylePoints: 0, grazeCombo: 0,
+    difficulty: validDifficulty(saved.difficulty), performance: Array.isArray(saved.performance) ? saved.performance.slice(-8) : [],
+    roundAssist: 0, lastEarned: 0, lastDifficulty: validDifficulty(saved.difficulty),
+    charge: 0, deliveries: 0, lastDeliveries: 0, lastDangerousSpawn: -100,
     totalPoints, lifetimePoints: Math.max(Number(saved.lifetimePoints) || 0, totalPoints + priorSpending),
     gamesPlayed: Number(saved.gamesPlayed) || 0,
     selectedSkin: unlocked.includes(saved.selectedSkin) ? saved.selectedSkin : 0,
@@ -104,7 +109,7 @@ export function createGame(saved = {}, seed = 0x1024) {
     time: 0, deathTimer: 0, freezeTimer: 0, slowTimer: 0, slowPhase: null, timeScale: 1,
     angle45: false, invincibleTimer: 0, phaseTimer: 0, bulletTimer: 0, bonusIntroduced: [],
     player: null, goal: null, point: null, enemies: [], bonuses: [], bombWaves: [], trail: [],
-    spawnTimer: 0, spawned: 0, spawnSlots: 0, wave: 1, nextBonusAt: 7,
+    spawnTimer: 0, spawned: 0, spawnSlots: 0, wave: 1, nextBonusAt: 5,
     pointCount: 0, nextSpecialPointAt: 12, specialDebuts: 0, normalDeliveries: 0,
     pointSpawnLow: 0.2, pointSpawnHigh: 0.8, goalCorner: -1, goalTarget: null
   };
@@ -113,7 +118,14 @@ export function createGame(saved = {}, seed = 0x1024) {
 export function snapshotProgress(game) {
   return { best: game.best, totalPoints: game.totalPoints, lifetimePoints: game.lifetimePoints,
     gamesPlayed: game.gamesPlayed, developerMode: game.developerMode,
-    selectedSkin: game.selectedSkin, unlocked: [...game.unlocked], tutorialSeen: game.tutorialSeen };
+    selectedSkin: game.selectedSkin, unlocked: [...game.unlocked], tutorialSeen: game.tutorialSeen,
+    difficulty: game.difficulty, performance: game.performance };
+}
+
+export function setDifficulty(game, difficulty) {
+  if (!(difficulty in { rookie: 1, entry: 1, hard: 1, nightmare: 1 })) return false;
+  game.difficulty = difficulty;
+  return true;
 }
 
 export function activateDeveloperMode(game) {
@@ -153,6 +165,11 @@ export function startRound(game) {
   game.score = 0;
   game.stylePoints = 0;
   game.grazeCombo = 0;
+  game.charge = 0;
+  game.deliveries = 0;
+  game.lastDangerousSpawn = -100;
+  game.roundAssist = adaptiveAssist(game.performance, game.difficulty);
+  game.lastDifficulty = game.difficulty;
   game.lastTime = 0;
   game.time = 0;
   game.deathTimer = 0;
@@ -179,7 +196,7 @@ export function startRound(game) {
   game.wave = 1;
   game.introducedEnemies = [];
   game.nextEnemyId = 1;
-  game.nextBonusAt = 7;
+  game.nextBonusAt = 5;
   game.pointCount = 0;
   game.nextSpecialPointAt = game.classicSpawns ? 8 : 12;
   game.specialDebuts = 0;
@@ -286,6 +303,11 @@ export function turn(game) {
   if (game.status !== 'playing' && game.status !== 'tutorial') return false;
   const heading = turnHeading(Math.round(game.player.dir * 2), game.player.clockwise, game.angle45 && game.status === 'playing');
   game.player.dir = heading / 2;
+  if (game.status === 'playing' && game.charge >= CHARGE_SEGMENTS && game.invincibleTimer <= 0) {
+    game.charge = 0;
+    applyPowerup(game, 'invincible');
+    emit(game, 'charge-release', '无敌启动', { x: game.player.x, y: game.player.y });
+  }
   const tone = turnTone(game.player.y, toneDirection(heading));
   emit(game, 'turn', '', {
     x: game.player.x, y: game.player.y, dir: game.player.dir, heading,
@@ -402,8 +424,16 @@ function checkGraze(game, enemy, reward = true, previousPlayer = game.player, pr
       game.grazeCombo++;
       const styleDelta = (grade === 'extreme' ? 1 : 0) + (game.grazeCombo % 3 === 0 ? 1 : 0);
       game.stylePoints += styleDelta;
-      score(game, 1, 'near-miss', { x: enemy.x, y: enemy.y, playerX: player.x, playerY: player.y,
+      if (grade === 'extreme') score(game, 1, 'near-miss', { x: enemy.x, y: enemy.y, playerX: player.x, playerY: player.y,
         targetId: enemy.id, type: enemy.type, mode: enemy.grazeMode, grade, styleDelta, combo: game.grazeCombo });
+      else emit(game, 'near-miss', '擦肩充能', { x: enemy.x, y: enemy.y, playerX: player.x, playerY: player.y,
+        targetId: enemy.id, type: enemy.type, mode: enemy.grazeMode, grade, styleDelta, combo: game.grazeCombo, scoreDelta: 0 });
+      if (game.invincibleTimer <= 0) {
+        const before = game.charge;
+        game.charge = Math.min(CHARGE_SEGMENTS, game.charge + (grade === 'extreme' ? 2 : 1));
+        if (game.charge > before) emit(game, 'charge-gain', '', { x: enemy.x, y: enemy.y, amount: game.charge - before, charge: game.charge });
+        if (before < CHARGE_SEGMENTS && game.charge === CHARGE_SEGMENTS) emit(game, 'charge-ready', '下次转向启动无敌');
+      }
     } else emit(game, 'near-miss', '擦肩成功', { x: enemy.x, y: enemy.y, targetId: enemy.id, type: enemy.type,
       playerX: player.x, playerY: player.y, mode: enemy.grazeMode,
       grade, styleDelta: 0, combo: 0, scoreDelta: 0 });
@@ -466,10 +496,29 @@ function nextPoint(game) {
   emit(game, 'point-spawn');
 }
 
+function chooseEnemyLane(game, side) {
+  const attempts = game.classicSpawns ? 1 : Math.max(2, Math.round(5 + game.roundAssist * 10));
+  let candidate = 0;
+  for (let i = 0; i < attempts; i++) {
+    candidate = between(game, -3.3, 3.3);
+    if (game.classicSpawns) break;
+    const nearPlayer = Math.abs(candidate - game.player.y) < (game.wave <= 3 ? 0.9 : 0.65);
+    const recent = game.time - game.lastDangerousSpawn < (game.wave <= 3 ? 5 : 2.5);
+    const approaching = game.enemies.some(enemy => !enemy.gone && enemy.type !== 8
+      && Math.abs(enemy.y - game.player.y) < 1.15 && Math.abs(enemy.x - game.player.x) < 5);
+    const pairedLane = game.enemies.some(enemy => !enemy.gone && enemy.type !== 8
+      && Math.abs(enemy.y - candidate) < 0.85 && Math.abs(enemy.x - side * WORLD.width * .75) < 7);
+    if (!nearPlayer || !(recent || approaching || pairedLane)) break;
+    if (i === attempts - 1) emit(game, 'lane-guard', '', { attempts });
+  }
+  if (Math.abs(candidate - game.player.y) < .9) game.lastDangerousSpawn = game.time;
+  return candidate;
+}
+
 function spawnEnemy(game, forcedType = null) {
   const side = random(game) < 0.5 ? -1 : 1;
   const x = side * (forcedType === null ? WORLD.width * 0.75 : 6.2);
-  const y = forcedType === null ? between(game, -3.3, 3.3) : 1.6;
+  const y = forcedType === null ? chooseEnemyLane(game, side) : 1.6;
   if (forcedType === null) {
     game.spawned++;
     game.spawnSlots++;
@@ -525,12 +574,14 @@ export function startTestLevel(game) {
   game.point = null;
   game.testPreviewPointKind = null;
   game.spawnTimer = 0;
+  game.testContactPreviewTimer = 0;
+  game.testContactPreviewCountdown = 0;
   emit(game, 'test-level', '测试关卡');
 }
 
 export function testTriggerBonus(game, kind) {
   if (!game.testLevel || game.status !== 'playing'
-    || !['points', 'freeze', 'bomb', 'invincible', 'phase', 'bullet'].includes(kind)) return false;
+    || !['points', 'freeze', 'bomb', 'phase', 'bullet'].includes(kind)) return false;
   game.bonuses = game.bonuses.filter(bonus => !bonus.testPreview);
   game.bonuses.push({ x: game.player.x, y: game.player.y, vx: 0, kind, radius: .2925 });
   step(game);
@@ -552,6 +603,36 @@ export function testSpawnEnemy(game, type) {
     || !Number.isInteger(type) || type < 0 || type >= ENEMY_TYPES.length) return false;
   spawnEnemy(game, type);
   return true;
+}
+
+export function testFillCharge(game) {
+  if (!game.testLevel || game.status !== 'playing' || game.invincibleTimer > 0) return false;
+  game.charge = 0;
+  for (let i = 1; i <= CHARGE_SEGMENTS; i++) {
+    const x = game.player.x + 1.7 + i * .08, y = game.player.y + (i % 2 ? .35 : -.35);
+    emit(game, 'enemy-explode', '', { x, y, type: 0, source: 'near-miss', grade: 'normal' });
+    game.charge = i;
+    emit(game, 'charge-gain', '', { x, y, amount: 1, charge: i });
+  }
+  emit(game, 'charge-ready', '下次转向启动无敌');
+  return true;
+}
+
+export function testContactEnemy(game) {
+  if (!game.testLevel || game.status !== 'playing' || !(game.invincibleTimer > 0 || game.phaseTimer > 0)) return false;
+  game.testContactPreviewTimer = 4;
+  game.testContactPreviewCountdown = .5;
+  spawnTestContactEnemy(game);
+  step(game);
+  return true;
+}
+
+function spawnTestContactEnemy(game) {
+  const config = ENEMY_TYPES[0];
+  game.enemies = game.enemies.filter(enemy => !enemy.testContact);
+  game.enemies.push({ id: game.nextEnemyId++, x: game.player.x, y: game.player.y, testContact: true,
+    vx: 0, vy: 0, type: 0, radius: config.radius, hitW: config.width,
+    hitH: config.height, near: false, trail: [] });
 }
 
 export function testClearEnemies(game) {
@@ -582,11 +663,14 @@ function finishRound(game) {
   game.slowPhase = null;
   game.slowTimer = 0;
   game.lastScore = game.score;
+  game.lastDeliveries = game.deliveries;
   game.lastStylePoints = Math.floor(game.stylePoints * (activeSkin(game).styleBonus ?? 1));
   game.lastTime = game.time;
   game.best = Math.max(game.best, game.score);
-  game.totalPoints += game.score + game.lastStylePoints;
-  game.lifetimePoints += game.score + game.lastStylePoints;
+  game.lastEarned = rewardForRound(game.score, game.lastStylePoints, game.lastDifficulty);
+  game.totalPoints += game.lastEarned;
+  game.lifetimePoints += game.lastEarned;
+  game.performance = recordRound(game.performance, game.deliveries, game.time);
   game.gamesPlayed++;
   emit(game, 'results');
 }
@@ -604,6 +688,15 @@ export function step(game) {
   if (game.status === 'tutorial') return stepTutorial(game);
   if (game.status !== 'playing') return game;
   stepPowerups(game, STEP);
+  if (game.testLevel && game.testContactPreviewTimer > 0) {
+    game.testContactPreviewTimer -= STEP;
+    game.testContactPreviewCountdown -= STEP;
+    if (game.testContactPreviewCountdown <= 0 && (game.invincibleTimer > 0 || game.phaseTimer > 0)) {
+      spawnTestContactEnemy(game);
+      game.testContactPreviewCountdown = .5;
+    }
+    if (game.testContactPreviewTimer <= 0) game.enemies = game.enemies.filter(enemy => !enemy.testContact);
+  }
 
   if (game.slowPhase === 'down') {
     if (game.timeScale >= 0.25) game.timeScale -= STEP * game.timeScale * 2;
@@ -667,6 +760,7 @@ export function step(game) {
       const pointKind = game.point.kind;
       const special = pointKind === 'turn' || pointKind === 'angle45';
       if (!special) game.normalDeliveries++;
+      game.deliveries++;
       game.point.phase = 'returning';
       game.point.returnTimer = 0.22;
       player.carrying = false;
@@ -719,7 +813,8 @@ export function step(game) {
 
   if (game.freezeTimer <= 0) {
     game.spawnTimer += STEP * dtScale * spawnSpeedMultiplier(game);
-    const interval = enemySpawnInterval(game.score, game.classicSpawns);
+    const interval = enemySpawnInterval(game.score, game.classicSpawns) *
+      (game.classicSpawns ? 1 : spawnGapMultiplier(game));
     if (!game.testLevel && game.spawnTimer >= interval) {
       game.spawnTimer = 0;
       spawnEnemy(game);

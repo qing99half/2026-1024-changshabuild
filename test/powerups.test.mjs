@@ -4,7 +4,7 @@ import { chooseBonusKind, applyPowerup, stepPowerups, playerSpeedMultiplier,
   enemySpeedMultiplier, spawnSpeedMultiplier, enemyContactEffect } from '../src/powerups.mjs';
 
 test('the existing reward pool stays intact until score and wave thresholds', () => {
-  const game = { score: 30, wave: 5 };
+  const game = { score: 2, wave: 2 };
   assert.equal(chooseBonusKind(game, () => 0), 'points');
   assert.equal(chooseBonusKind(game, () => 0.5), 'freeze');
   assert.equal(chooseBonusKind(game, () => 0.999), 'bomb');
@@ -13,20 +13,25 @@ test('the existing reward pool stays intact until score and wave thresholds', ()
 
 test('each unlocked effect debuts at its first eligible reward slot', () => {
   const game = { score: 10, wave: 6 };
-  assert.equal(chooseBonusKind(game, () => 0), 'invincible');
-  game.score = 18; game.wave = 10;
   assert.equal(chooseBonusKind(game, () => 0), 'phase');
   game.score = 26; game.wave = 14;
   assert.equal(chooseBonusKind(game, () => 0), 'bullet');
-  assert.deepEqual(game.bonusIntroduced, ['invincible', 'phase', 'bullet']);
+  assert.deepEqual(game.bonusIntroduced, ['phase', 'bullet']);
   assert.equal(chooseBonusKind(game, () => 0.999), 'bullet');
   assert.equal(chooseBonusKind(game, () => 0), 'points');
 });
 
 test('crossing several thresholds at once introduces each new effect once', () => {
   const game = { score: 30, wave: 18 };
-  const kinds = Array.from({ length: 3 }, () => chooseBonusKind(game, () => 0.999));
-  assert.deepEqual(kinds, ['invincible', 'phase', 'bullet']);
+  const kinds = Array.from({ length: 2 }, () => chooseBonusKind(game, () => 0.999));
+  assert.deepEqual(kinds, ['phase', 'bullet']);
+});
+
+test('removed invincibility pickup redistributes its pool share to available rewards', () => {
+  const game = { score: 30, wave: 18, bonusIntroduced: ['phase', 'bullet'] };
+  const expected = ['points', 'freeze', 'bomb', 'phase', 'bullet'];
+  for (let i = 0; i < expected.length; i++)
+    assert.equal(chooseBonusKind(game, () => (i + .5) / expected.length), expected[i]);
 });
 
 test('invincible and phase replace one another while bullet time runs independently', () => {
@@ -50,11 +55,11 @@ test('powerup timers consume unscaled play time and stop at zero', () => {
 
 test('bullet time scales movement and spawning; freeze takes priority', () => {
   const game = { bulletTimer: 3, freezeTimer: 0 };
-  assert.equal(playerSpeedMultiplier(game), 1.5);
+  assert.equal(playerSpeedMultiplier(game), 1.25);
   assert.equal(enemySpeedMultiplier(game), 0.5);
   assert.equal(spawnSpeedMultiplier(game), 0.5);
   game.freezeTimer = 2;
-  assert.equal(playerSpeedMultiplier(game), 1.5);
+  assert.equal(playerSpeedMultiplier(game), 1.25);
   assert.equal(enemySpeedMultiplier(game), 0);
   assert.equal(spawnSpeedMultiplier(game), 0);
   game.bulletTimer = 0;

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, startRound, startTestLevel, testTriggerBonus, testTriggerPoint,
-  testSpawnEnemy, testClearEnemies, startTutorial, skipTutorial, step, turn, selectSkin,
-  buySkin, activateDeveloperMode, snapshotProgress, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES,
+  testSpawnEnemy, testClearEnemies, testFillCharge, testContactEnemy, startTutorial, skipTutorial, step, turn, selectSkin,
+  buySkin, activateDeveloperMode, snapshotProgress, setDifficulty, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES,
   ENEMY_UNLOCK_SCORES, ENEMY_UNLOCK_WAVES, grazeBounds } from '../src/core.mjs';
 import { SKINS, isSkinRevealed } from '../src/skins.mjs';
 
@@ -112,20 +112,17 @@ test('45-degree delivery toggles the turn angle independently of reverse directi
   assert.equal(game.player.dir, 3);
 });
 
-test('new protective balls apply before same-frame enemy contact', () => {
-  for (const [kind, expectedSource] of [['invincible', 'invincible'], ['phase', null]]) {
-    const game = createGame(); startRound(game);
-    game.player.x = 0; game.player.y = 0; game.player.speed = 0;
-    game.point = null; game.spawnTimer = -100;
-    game.enemies = [{ id: 401, x: 0, y: 0, vx: 0, vy: 0, type: 0, radius: .25, near: false }];
-    game.bonuses = [{ x: 0, y: 0, vx: 0, kind, radius: .18 }];
-    step(game);
-    assert.equal(game.status, 'playing', kind);
-    assert.equal(game.score, 1, kind);
-    assert.equal(game.enemies.length, expectedSource ? 0 : 1, kind);
-    assert.equal(game.events.some(event => event.kind === 'enemy-explode' && event.source === expectedSource),
-      Boolean(expectedSource), kind);
-  }
+test('phase pickup applies before same-frame enemy contact', () => {
+  const game = createGame(); startRound(game);
+  game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+  game.point = null; game.spawnTimer = -100;
+  game.enemies = [{ id: 401, x: 0, y: 0, vx: 0, vy: 0, type: 0, radius: .25, near: false }];
+  game.bonuses = [{ x: 0, y: 0, vx: 0, kind: 'phase', radius: .18 }];
+  step(game);
+  assert.equal(game.status, 'playing');
+  assert.equal(game.score, 1);
+  assert.equal(game.enemies.length, 1);
+  assert.equal(game.events.some(event => event.kind === 'phase-pass'), true);
 });
 
 test('phase emits one pass ripple per overlap without collision or graze score', () => {
@@ -238,7 +235,7 @@ test('special delivery eases down to quarter speed and back', () => {
   assert.equal(game.slowPhase, null);
 });
 
-test('a head-on side graze scores once when the player leaves the danger zone', () => {
+test('a normal head-on side graze clears and charges without scoring or shrinking', () => {
   const game = createGame();
   startRound(game);
   game.player.x = 0; game.player.y = .76; game.player.dir = 3; game.player.speed = 0;
@@ -249,8 +246,100 @@ test('a head-on side graze scores once when the player leaves the danger zone', 
   assert.equal(game.enemies[0].near, true);
   game.enemies[0].x = 1.2;
   step(game);
-  assert.equal(game.score, 1);
+  assert.equal(game.score, 0);
+  assert.equal(game.charge, 1);
+  assert.equal(game.player.size > .425, true);
   assert.equal(game.events.find(event => event.kind === 'near-miss').mode, 'head-on');
+});
+
+test('stored six-segment charge releases on a normal turn before collision', () => {
+  const game = createGame(); startRound(game);
+  game.charge = 6;
+  game.player.x = 0; game.player.y = 0; game.player.speed = 0;
+  game.point = null; game.spawnTimer = -100;
+  game.enemies = [{ id: 800, x: 0, y: 0, vx: 0, vy: 0, type: 0,
+    radius: .25, hitW: .5, hitH: .5, near: false }];
+  assert.equal(turn(game), true);
+  assert.equal(game.player.dir, 1);
+  assert.equal(game.charge, 0);
+  assert.equal(game.invincibleTimer, 5);
+  step(game);
+  assert.equal(game.status, 'playing');
+  assert.equal(game.enemies.length, 0);
+  assert.equal(game.events.some(event => event.kind === 'enemy-explode' && event.source === 'invincible'), true);
+});
+
+test('test-level controls reproduce charge release, invincible shatter and phase pass', () => {
+  const game = createGame(); startTestLevel(game);
+  assert.equal(testFillCharge(game), true);
+  assert.equal(game.charge, 6);
+  assert.equal(game.events.filter(event => event.kind === 'charge-gain').length, 6);
+  turn(game);
+  assert.equal(game.invincibleTimer, 5);
+  assert.equal(testContactEnemy(game), true);
+  assert.equal(game.events.some(event => event.kind === 'enemy-explode' && event.source === 'invincible'), true);
+  testTriggerBonus(game, 'phase');
+  assert.equal(testContactEnemy(game), true);
+  assert.equal(game.events.some(event => event.kind === 'phase-pass'), true);
+});
+
+test('extreme graze at five charge fills six without carrying overflow', () => {
+  const game = createGame(); startRound(game);
+  game.charge = 5;
+  game.player.x = 0; game.player.y = .64; game.player.dir = 3; game.player.speed = 0;
+  game.point = null; game.spawnTimer = -100;
+  game.enemies = [{ id: 802, x: 0, y: 0, vx: 2.4, vy: 0, type: 0,
+    radius: .25, hitW: .5, hitH: .5, near: false }];
+  step(game);
+  game.enemies[0].x = 1.2;
+  step(game);
+  assert.equal(game.events.find(event => event.kind === 'near-miss').grade, 'extreme');
+  assert.equal(game.charge, 6);
+  assert.equal(game.events.find(event => event.kind === 'charge-gain').amount, 1);
+  assert.equal(game.events.filter(event => event.kind === 'charge-ready').length, 1);
+  turn(game);
+  assert.equal(game.charge, 0);
+  assert.equal(game.invincibleTimer, 5);
+});
+
+test('charge events and release work for every equipped skin', () => {
+  for (let skin = 0; skin < SKINS.length; skin++) {
+    const game = createGame({ unlocked: Array.from({ length: SKINS.length }, (_, index) => index), selectedSkin: skin });
+    startTestLevel(game);
+    assert.equal(game.roundSkin, skin);
+    assert.equal(testFillCharge(game), true);
+    assert.equal(game.charge, 6);
+    assert.equal(game.events.filter(event => event.kind === 'charge-gain').length, 6);
+    turn(game);
+    assert.equal(game.invincibleTimer, 5);
+  }
+});
+
+test('full charge waits through active invincibility and can override phase on later turn', () => {
+  const game = createGame(); startRound(game);
+  game.charge = 6;
+  game.invincibleTimer = 3;
+  turn(game);
+  assert.equal(game.charge, 6);
+  game.invincibleTimer = 0;
+  game.phaseTimer = 2;
+  turn(game);
+  assert.equal(game.charge, 0);
+  assert.equal(game.phaseTimer, 0);
+  assert.equal(game.invincibleTimer, 5);
+});
+
+test('invincible grazing cannot refill the charge', () => {
+  const game = createGame(); startRound(game);
+  game.invincibleTimer = 5;
+  game.player.x = 0; game.player.y = .76; game.player.dir = 3; game.player.speed = 0;
+  game.point = null; game.spawnTimer = -100;
+  game.enemies = [{ id: 801, x: 0, y: 0, vx: 2.4, vy: 0, type: 0,
+    radius: .25, hitW: .5, hitH: .5, near: false }];
+  step(game);
+  game.enemies[0].x = 1.2;
+  step(game);
+  assert.equal(game.charge, 0);
 });
 
 test('graze requires front perpendicular or aligned side head-on motion', () => {
@@ -270,7 +359,7 @@ test('graze requires front perpendicular or aligned side head-on motion', () => 
       step(game);
       game.enemies[0].x = 2 * direction;
       step(game);
-      assert.equal(game.score, expectedMode ? 1 : 0, `${direction} ${position} ${heading}`);
+      assert.equal(game.charge, expectedMode ? 1 : 0, `${direction} ${position} ${heading}`);
       if (expectedMode) assert.equal(game.events.find(e => e.kind === 'near-miss').mode, expectedMode);
     }
   }
@@ -305,7 +394,8 @@ test('the safe graze band is 25 percent narrower than the prior expanded band', 
   assert.equal(game.events.some(event => event.kind === 'near-miss-enter'), true);
   game.enemies[0].x = 1.2;
   step(game);
-  assert.equal(game.score, 1);
+  assert.equal(game.score, 0);
+  assert.equal(game.charge, 1);
   assert.equal(game.events.find(event => event.kind === 'near-miss').grade, 'normal');
   assert.equal(game.events.find(event => event.kind === 'near-miss').type, 0);
   assert.equal(game.events.find(event => event.kind === 'near-miss').combo, 1);
@@ -369,7 +459,8 @@ test('death leads to results and banks the score once', () => {
   for (let i = 0; i < 121; i++) step(game);
   assert.equal(game.status, 'results');
   assert.deepEqual(snapshotProgress(game), { best: 4, totalPoints: 9, lifetimePoints: 9,
-    gamesPlayed: 2, developerMode: false, selectedSkin: 0, unlocked: [0], tutorialSeen: true });
+    gamesPlayed: 2, developerMode: false, selectedSkin: 0, unlocked: [0], tutorialSeen: true,
+    difficulty: 'entry', performance: [{ deliveries: 0, time: game.lastTime }] });
   for (let i = 0; i < 30; i++) step(game);
   assert.equal(game.totalPoints, 9);
 });
@@ -478,7 +569,7 @@ test('new enemy classes debut only after score and wave thresholds open', () => 
   for (let type = 0; type < 7; type++) {
     game.score = ENEMY_UNLOCK_SCORES[type];
     game.spawnSlots = (ENEMY_UNLOCK_WAVES[type] - 1) * 4;
-    game.spawnTimer = 2;
+    game.spawnTimer = 10;
     game.spawned = 0;
     step(game);
     assert.equal(game.enemies.at(-1).type, type);
@@ -637,12 +728,29 @@ test('the recorded no-input round ends on the upper boundary in 2.96 seconds', (
 test('opening enemy spawns beyond the field and travels into view', () => {
   const game = createGame();
   startRound(game);
+  game.spawnTimer = 10;
   step(game);
   assert.equal(game.enemies.length, 1);
   const enemy = game.enemies[0];
   assert.ok(Math.abs(enemy.x) > WORLD.width / 2);
   for (let i = 0; i < 100; i++) step(game);
   assert.ok(game.enemies.some(item => item === enemy && Math.abs(item.x) < WORLD.width / 2));
+});
+
+test('early spawn rerolls a second enemy aimed through the occupied player lane', () => {
+  let dangerous = 0;
+  for (let seed = 1; seed <= 80; seed++) {
+    const game = createGame({}, seed); startRound(game);
+    game.player.y = 0; game.player.speed = 0; game.point = null;
+    game.spawnTimer = 10;
+    game.enemies = [{ id: 900, x: 4, y: 0, vx: -2.4, vy: 0, type: 0,
+      radius: .25, hitW: .5, hitH: .5, near: false }];
+    step(game);
+    const spawned = game.enemies.find(enemy => enemy.id === 1);
+    assert.ok(spawned);
+    if (Math.abs(spawned.y) < .9) dangerous++;
+  }
+  assert.ok(dangerous <= 5, `overlapping lanes in ${dangerous}/80 openings`);
 });
 
 test('enemy trail follows movement, stays bounded, and fades during freeze', () => {
@@ -662,10 +770,11 @@ test('enemy trail follows movement, stays bounded, and fades during freeze', () 
   assert.equal(enemy.trail.length, 0);
 });
 
-test('the seventh hazard spawn is replaced by one bonus', () => {
+test('the fifth hazard spawn is replaced by one bonus', () => {
   const game = createGame();
   startRound(game);
-  game.spawned = 6;
+  game.spawned = 4;
+  game.spawnTimer = 10;
   step(game);
   assert.equal(game.enemies.length, 0);
   assert.equal(game.bonuses.length, 1);
@@ -685,7 +794,7 @@ test('a score jump shortens a pending reward gap but never makes a consecutive r
   step(game);
   assert.equal(game.bonuses.length, 1);
   assert.equal(game.spawned, 0);
-  assert.equal(game.nextBonusAt, 5);
+  assert.ok(game.nextBonusAt >= 4 && game.nextBonusAt <= 5);
   game.spawnTimer = 2;
   step(game);
   assert.equal(game.bonuses.length, 1);
@@ -697,9 +806,10 @@ test('test level directly triggers special effects and enemies without saving pr
   startTestLevel(game);
   assert.equal(game.testLevel, true);
   assert.equal(game.status, 'playing');
-  assert.equal(testTriggerBonus(game, 'invincible'), true);
+  assert.equal(testTriggerBonus(game, 'invincible'), false);
+  assert.equal(testFillCharge(game), true);
+  assert.equal(turn(game), true);
   assert.ok(game.invincibleTimer > 0);
-  assert.equal(game.bonuses[0].kind, 'invincible');
   assert.equal(testTriggerPoint(game, 'angle45'), true);
   assert.equal(game.angle45, true);
   assert.equal(testSpawnEnemy(game, 8), true);

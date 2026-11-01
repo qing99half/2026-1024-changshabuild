@@ -7,11 +7,11 @@ export function waveForSpawnSlot(slot) {
 }
 
 export function bonusGapRange(score) {
-  if (score >= 32) return [5, 5];
-  if (score >= 24) return [6, 8];
-  if (score >= 16) return [8, 10];
-  if (score >= 8) return [10, 14];
-  return [14, 18];
+  if (score >= 32) return [4, 5];
+  if (score >= 24) return [5, 6];
+  if (score >= 16) return [6, 8];
+  if (score >= 8) return [7, 9];
+  return [8, 10];
 }
 
 export function nextBonusGap(score, random) {

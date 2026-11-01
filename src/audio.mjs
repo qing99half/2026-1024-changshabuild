@@ -401,6 +401,9 @@ export function playAudioEvent(kind, event = {}) {
       sample(87, { gain: event.grade === 'extreme' ? .44 : .36,
         pitch: event.grade === 'extreme' ? 1.035 : 1 });
       break;
+    case 'charge-ready': sample(98, { gain: .34, pitch: 1.25 }); break;
+    case 'charge-release': sample(93, { gain: .55 }); sample(98, { gain: .42, pitch: 1.08 }); break;
+    case 'phase-pass': sample(92, { gain: .2, pitch: 1.22 }); break;
     case 'enemy-explode':
       if (erasure) eliminate();
       else explode();

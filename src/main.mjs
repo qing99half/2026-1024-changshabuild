@@ -1,12 +1,13 @@
 import { createGame, startRound, startTestLevel, testTriggerBonus, testTriggerPoint,
-  testSpawnEnemy, testClearEnemies, startTutorial, skipTutorial, step, turn, togglePause,
-  selectSkin, skinCost, buySkin, activateDeveloperMode, snapshotProgress,
-  STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES } from './core.mjs';
+  testSpawnEnemy, testClearEnemies, testFillCharge, testContactEnemy, startTutorial, skipTutorial, step, turn, togglePause,
+  selectSkin, skinCost, buySkin, activateDeveloperMode, snapshotProgress, setDifficulty,
+  STEP, WORLD, ENEMY_TRAIL_LIFE, ENEMY_TYPES, CHARGE_SEGMENTS } from './core.mjs';
 import { preloadAudio, preloadVoiceSet, preloadCharacterAudio, unlockAudio, playAudioEvent, previewEliminate, startMusic, pauseMusic, fadeOutMusic, setMusicAtmosphere, setMelodicMode, setVolumeLevels } from './audio.mjs';
 import { SKINS, isSkinRevealed, activeSkin } from './skins.mjs';
 import { normalizeVolumes } from './audio-policy.mjs';
 import { requestLandscape } from './orientation.mjs';
 import { directionVector } from './directions.mjs';
+import { DIFFICULTIES } from './difficulty.mjs';
 import { bulletTimeVisualState, drawBulletTimeWorld, drawBulletTimeMatte,
   drawPowerupBackground, drawPowerupForeground, drawPowerupPlayerAura } from './powerup-visuals.mjs';
 
@@ -14,13 +15,6 @@ const $ = id => document.getElementById(id);
 const canvas = $('game');
 const ctx = canvas.getContext('2d', { alpha: false });
 const stage = $('stage');
-const colors = SKINS.map(skin => skin.color);
-const skinNames = SKINS.map(skin => skin.name);
-const skinDescriptions = [
-  '原版圆环', '双线光轨', '暖色火星', '紫色电弧', '断续光点',
-  '环绕光圈', '几何碎片', '绕行光点', '像素方块', '青柠星芒',
-  '猫爪粒子', '声波扩散', '红色圆球 · 白色断开 T · 专属背景曲', '黑棕圆球 · 黄紫 24 号球衣'
-];
 const enemyColors = ['#347da0', '#4c9c79', '#c77a39', '#7658a1', '#c64498', '#ba4d44', '#b9bdbf', '#e6ad55', '#8cdbd6'];
 const enemyArt = ['EnemySquare-129.png', 'EnemySquare2-128.png', 'EnemySquare3-131.png', 'EnemySquare4-137.png', 'EnemySquare5-115.png', 'GoalZone1-136.png', 'EnemySquare7-134.png'];
 const warningArt = ['warning2-146.png', 'warning6-135.png', 'warning3-162.png', 'warning4-122.png', 'warning5-126.png', 'warning-118.png', 'warning7-150.png', 'warning2-146.png'];
@@ -71,10 +65,14 @@ const turnExplosions = [];
 const tesWhips = [];
 const labels = [];
 const grazeFlashes = [];
+const chargeOrbs = [];
+const CHARGE_REVEAL_DURATION = 1.25;
+let chargeRevealAge = Infinity;
 const bonusParticleClocks = new Map();
 let pointTrailSource = null;
 let pointTrailClock = 0;
 let skinFeedback = '';
+let pendingPurchase = null;
 let developerShortcutUntil = 0;
 let testShortcutUntil = 0;
 
@@ -211,6 +209,17 @@ function visualEvent(event) {
   }
   if (event.kind === 'bonus') { burst(x, y, 30, 2, .75, '#ffffff', 7, fxArt.point); shake = Math.max(shake, .1); }
   if (event.kind === 'freeze') { burst(x, y, 30, 2, .75, '#d8f4ff', 7, fxArt.point); ring(x, y, '#b9eafb', 0, .75, 420); shake = Math.max(shake, .15); }
+  if (event.kind === 'charge-gain') {
+    chargeRevealAge = 0;
+    for (let i = 0; i < event.amount; i++) chargeOrbs.push({ x, y, index: event.charge - event.amount + i, age: 0, life: reducedMotion ? .22 : .42 });
+  }
+  if (event.kind === 'charge-release') {
+    chargeRevealAge = Infinity;
+    chargeOrbs.length = 0;
+    ring(x, y, '#f7d990', 0, .46, 125);
+    burst(x, y, 42, 2.5, .52, '#ffe5a2', 4);
+    shake = Math.max(shake, .17);
+  }
   if (event.kind === 'bomb') {
     for (const delay of [0, .05, .1]) burst(x, y, 50, 20, 3, '#f7f7f3', 5, fxArt.explode, delay);
     for (const delay of [0, .08, .16, .24]) ring(x, y, '#f7f7f3', delay, .8, 350);
@@ -223,22 +232,30 @@ function visualEvent(event) {
   }
   if (event.kind === 'enemy-teleport') burst(x, y, 14, 1.2, .45, enemyColors[8], 4,
     null, 0, false, null, true);
-  if (event.kind === 'phase-pass') ring(x, y, '#a6dadd', 0, .32, 34);
+  if (event.kind === 'phase-pass') {
+    ring(x, y, '#a6dadd', 0, .42, 62);
+    burst(x, y, 14, 1.1, .38, '#bffbff', 3);
+    shake = Math.max(shake, .035);
+  }
   if (event.kind === 'enemy-explode') {
     shatter(x, y, 50, 4, 2, enemyColors[event.type] || '#ffffff', 6, true);
-    if (event.source === 'invincible') ring(x, y, '#f6d688', 0, .3, 46, true);
-    shake = Math.max(shake, event.source === 'near-miss' ? .06 : .08);
+    if (event.source === 'invincible') {
+      ring(x, y, '#f6d688', 0, .4, 98, true);
+      burst(x, y, 20, 2.5, .45, '#f6d688', 3);
+    }
+    shake = Math.max(shake, event.source === 'near-miss' ? (event.grade === 'extreme' ? .13 : .08)
+      : event.source === 'invincible' ? .14 : .08);
   }
   if (event.kind === 'near-miss') {
     const extreme = event.grade === 'extreme';
     const angle = Math.atan2(y - (event.playerY ?? game.player?.y ?? y), x - (event.playerX ?? game.player?.x ?? x));
     grazeFlashes.push({ x, y, angle, extreme, age: 0, life: .45 });
     const earned = event.scoreDelta !== 0;
-    labels.push({ x, y, text: earned ? (extreme ? '极限擦肩 +1' : '擦肩 +1') : '擦肩成功', age: -.16,
+    labels.push({ x, y, text: earned ? '极限擦肩 +1' : '擦肩充能', age: -.16,
       life: .48, color: extreme ? '#fff4bc' : '#f4f4f0', size: extreme ? 26 : 21 });
     if (event.styleDelta > 0) labels.push({ x, y: y - .3, text: `风格 +${event.styleDelta}`,
       age: -.23, life: .48, color: '#fff4bc', size: 15 });
-    shake = Math.max(shake, extreme ? .1 : .06);
+    shake = Math.max(shake, extreme ? .13 : .08);
   }
   if (event.kind === 'die') {
     shatter(x, y, 75, 5, 3, skin.shatterColors || skin.color, 8);
@@ -361,11 +378,13 @@ function updateVisualEffects(dt) {
   for (const bonus of bonusParticleClocks.keys())
     if (!game.bonuses.includes(bonus)) bonusParticleClocks.delete(bonus);
   for (const flash of grazeFlashes) flash.age += dt;
+  for (const orb of chargeOrbs) orb.age += dt;
+  chargeRevealAge += dt;
   for (const label of labels) { label.age += dt; label.y += .55 * dt; }
   for (const [array, expired] of [[particles, p => p.age >= p.life], [rings, r => r.age >= r.life],
     [scorePulses, p => p.age >= p.life], [pointTrailParticles, p => p.age >= p.life],
     [turnExplosions, fx => fx.age >= 3 || fx.scale <= 0], [tesWhips, whip => whip.age >= whip.life], [labels, l => l.age >= l.life],
-    [grazeFlashes, f => f.age >= f.life]]) {
+    [grazeFlashes, f => f.age >= f.life], [chargeOrbs, o => o.age >= o.life]]) {
     for (let i = array.length - 1; i >= 0; i--) if (expired(array[i])) array.splice(i, 1);
   }
 }
@@ -514,6 +533,61 @@ function drawGrazeFlashes() {
   }
 }
 
+function paintMenuOrb(element, index) {
+  const skin = SKINS[index];
+  const secret = !isSkinRevealed(game, index);
+  element.classList.toggle('secret', secret);
+  element.style.background = secret ? '' : skin.art
+    ? `center / contain no-repeat url('${artUrl(skin.art)}')`
+    : `radial-gradient(circle at 30% 25%, #ffffff70, transparent 48%), ${skin.color}`;
+}
+
+function syncSkinMenu() {
+  const index = game.selectedSkin;
+  const skin = SKINS[index];
+  const revealed = isSkinRevealed(game, index);
+  const owned = game.unlocked.includes(index);
+  $('menu').classList.toggle('reduced-motion', reducedMotion);
+  $('skin-name').textContent = revealed ? skin.name : '神秘小球';
+  $('skin-dot').setAttribute('aria-label', `当前小球：${revealed ? skin.name : '神秘小球'}`);
+  paintMenuOrb($('skin-dot'), index);
+  for (const [side, neighborIndex] of [['left', index - 1], ['right', index + 1]]) {
+    const item = $(`skin-${side}`);
+    const atEnd = neighborIndex < 0 || neighborIndex >= SKINS.length;
+    item.classList.toggle('empty', neighborIndex < 0);
+    item.classList.toggle('coming-soon', neighborIndex >= SKINS.length);
+    const orb = item.querySelector('.skin-orb');
+    const label = item.querySelector('.skin-neighbor-name');
+    if (atEnd) {
+      orb.classList.remove('secret');
+      orb.style.background = '';
+      label.textContent = neighborIndex >= SKINS.length ? '敬请期待' : '';
+    } else {
+      paintMenuOrb(orb, neighborIndex);
+      label.textContent = isSkinRevealed(game, neighborIndex) ? SKINS[neighborIndex].name : '神秘小球';
+    }
+  }
+  $('skin-prev').disabled = index === 0;
+  $('skin-next').disabled = index === SKINS.length - 1;
+  $('start').hidden = !owned;
+  $('skin-buy').hidden = owned || !revealed;
+  $('skin-progress').hidden = revealed;
+  if (!revealed) {
+    $('skin-progress').textContent = `生涯累计 ${Math.floor(game.lifetimePoints)} / ${skin.revealAt} 分揭示`;
+    $('skin-feedback').textContent = `揭示后花费 ${skinCost(index)} 点解锁 · 请继续闯关`;
+  } else if (!owned) {
+    const cost = skinCost(index);
+    $('skin-buy').textContent = `解锁 ${skin.name} · ${cost} 点`;
+    $('skin-buy').disabled = game.totalPoints < cost;
+    $('skin-feedback').textContent = game.totalPoints < cost
+      ? `还差 ${cost - game.totalPoints} 点，请继续闯关获得积分` : skinFeedback;
+  } else {
+    $('skin-feedback').textContent = skinFeedback;
+  }
+  $('purchase-confirm').hidden = pendingPurchase === null;
+  $('menu').querySelector('.menu-center').inert = pendingPurchase !== null;
+}
+
 function syncUI() {
   $('settings').hidden = !settingsOpen;
   $('test-level').hidden = !game.testLevel || game.status !== 'playing' || settingsOpen;
@@ -525,8 +599,12 @@ function syncUI() {
   if (game.status === 'tutorial') {
     const stage = game.tutorial.stage;
     $('tutorial-step').textContent = `0${stage + 1} / 03`;
-    $('tutorial-title').textContent = ['点击，改变方向', '拾取光点，送回圆环', '避开敌人，继续前进'][stage];
-    $('tutorial-detail').textContent = ['连续转向两次，感受单键操作', '碰到白色光点后，转向返回起点圆环', '至少转向一次，并坚持到敌人离开场地'][stage];
+    $('tutorial-title').textContent = ['每次只向右转 90°', '白球送回白圈才得分', '观察敌人，避开接触'][stage];
+    $('tutorial-detail').textContent = [
+      '连续转向两次，留意移动方向如何改变',
+      '拾取光点后，它会跟着你；送回圆环才算完成',
+      game.tutorial.failures ? '碰到敌人会结束本局。留意它从哪边来，再试一次' : '至少转向一次，并坚持到敌人离开场地'
+    ][stage];
     $('tutorial-input').src = `assets/original/${matchMedia('(pointer: coarse)').matches ? 'Instruct_Control_MouseON-144.png' : 'Instruct_Control_Space-143.png'}`;
   }
   $('menu-best').textContent = game.best;
@@ -534,33 +612,11 @@ function syncUI() {
   $('result-score').textContent = game.lastScore;
   $('result-time').textContent = `${game.lastTime.toFixed(2)}s`;
   $('result-best').textContent = game.best;
-  $('result-earned').textContent = `+${game.lastScore + (game.lastStylePoints || 0)} 点`;
-  $('result-style').textContent = `其中风格奖励 +${game.lastStylePoints || 0} 点`;
+  $('result-earned').textContent = `+${game.lastEarned} 点`;
+  $('result-style').textContent = `原始分 ${game.lastScore} · 风格 ${game.lastStylePoints || 0} · ${DIFFICULTIES[game.lastDifficulty].label} ×${DIFFICULTIES[game.lastDifficulty].reward}`;
   $('result-balance').textContent = game.totalPoints;
-  const index = game.selectedSkin;
-  const skin = SKINS[index];
-  const revealed = isSkinRevealed(game, index);
-  const owned = game.unlocked.includes(index);
-  const delta = value => value === 1 ? '标准' : `${value > 1 ? '+' : ''}${Math.round((value - 1) * 100)}%`;
-  $('skin-name').textContent = revealed ? skin.name : '???';
-  const preview = $('skin-dot');
-  preview.classList.toggle('has-art', revealed && Boolean(skin.art));
-  preview.classList.toggle('secret', !revealed);
-  preview.style.background = !revealed ? '' : skin.art ? `center / contain no-repeat url('${artUrl(skin.art)}')` : skin.color;
-  const cost = skinCost(index);
-  $('start').firstChild.textContent = owned ? '开始游戏 ' : '使用经典红开始 ';
-  $('skin-state').textContent = !revealed
-    ? `隐藏球 · 生涯 ${game.lifetimePoints}/${skin.revealAt}`
-    : owned ? '已拥有' : `需 ${cost} 点`;
-  $('skin-description').textContent = revealed ? skinDescriptions[index] : '继续游玩，揭开隐藏球的身份';
-  $('skin-traits').hidden = !revealed;
-  $('skin-traits').innerHTML = revealed
-    ? `<span>移动速度 <b>${delta(skin.speed)}</b></span><span>危险圈 <b>${delta(skin.hurt)}</b></span><span>拾取 <b>${delta(skin.pickup)}</b></span><span>擦肩带 <b>${delta(skin.graze)}</b></span><span>风格收益 <b>${delta(skin.styleBonus)}</b></span>`
-    : '';
-  $('skin-preview').hidden = !revealed;
-  $('skin-buy').hidden = owned || !revealed;
-  $('skin-buy').textContent = game.totalPoints >= cost ? `解锁 · ${cost} 点` : `还差 ${cost - game.totalPoints} 点`;
-  $('skin-feedback').textContent = skinFeedback;
+  $('difficulty').value = game.difficulty;
+  syncSkinMenu();
   $('motion-toggle').textContent = `动态效果：${reducedMotion ? '减弱' : '标准'}`;
   $('audio-toggle').textContent = `音效模式：${melodicAudio ? '扩展音律' : '原版'}`;
   for (const [key, value] of Object.entries(volumeLevels)) {
@@ -584,11 +640,11 @@ function closeSettings() {
 }
 
 function play(forceTutorial = false) {
-  if (!game.unlocked.includes(game.selectedSkin)) game.selectedSkin = 0;
+  if (!game.unlocked.includes(game.selectedSkin)) return;
   skinFeedback = '';
   preloadAudio();
   playAudioEvent('menu-click');
-  particles.length = 0; rings.length = 0; scorePulses.length = 0; pointTrailParticles.length = 0;
+  particles.length = 0; rings.length = 0; scorePulses.length = 0; pointTrailParticles.length = 0; chargeOrbs.length = 0; chargeRevealAge = Infinity;
   bonusParticleClocks.clear();
   turnExplosions.length = 0; labels.length = 0; grazeFlashes.length = 0; pointTrailSource = null;
   pointTrailClock = 0; shake = 0;
@@ -607,7 +663,7 @@ function enterTestLevel() {
   settingsOpen = false;
   preloadAudio();
   unlockAudio();
-  particles.length = 0; rings.length = 0; scorePulses.length = 0; pointTrailParticles.length = 0;
+  particles.length = 0; rings.length = 0; scorePulses.length = 0; pointTrailParticles.length = 0; chargeOrbs.length = 0; chargeRevealAge = Infinity;
   bonusParticleClocks.clear();
   turnExplosions.length = 0; labels.length = 0; grazeFlashes.length = 0;
   pointTrailSource = null; pointTrailClock = 0; shake = 0;
@@ -635,6 +691,11 @@ $('test-level').addEventListener('click', event => {
   if (target.dataset.testBonus) testTriggerBonus(game, target.dataset.testBonus);
   else if (target.dataset.testPoint) testTriggerPoint(game, target.dataset.testPoint);
   else if (target.dataset.testEnemy !== undefined) testSpawnEnemy(game, Number(target.dataset.testEnemy));
+  else if (target.dataset.testAction === 'charge') testFillCharge(game);
+  else if (target.dataset.testAction === 'release') turn(game);
+  else if (target.dataset.testAction === 'contact') testContactEnemy(game);
+  else if (target.dataset.testAction === 'invincible-contact') { testFillCharge(game); turn(game); testContactEnemy(game); }
+  else if (target.dataset.testAction === 'phase-contact') { testTriggerBonus(game, 'phase'); testContactEnemy(game); }
   else if (target.id === 'test-clear') testClearEnemies(game);
   else if (target.id === 'test-reset') { enterTestLevel(); return; }
   else if (target.id === 'test-exit') { exitTestLevel(); return; }
@@ -644,6 +705,9 @@ $('test-level').addEventListener('click', event => {
 $('start').addEventListener('click', () => play());
 $('restart').addEventListener('click', () => play());
 $('replay-tutorial').addEventListener('click', () => play(true));
+$('difficulty').addEventListener('change', event => {
+  if (setDifficulty(game, event.currentTarget.value)) { save(); syncUI(); }
+});
 $('settings-from-menu').addEventListener('click', event => openSettings(event.currentTarget));
 $('settings-from-pause').addEventListener('click', event => openSettings(event.currentTarget));
 $('settings-close').addEventListener('click', closeSettings);
@@ -683,7 +747,7 @@ for (const id of ['menu-from-pause', 'menu-from-results']) {
 }
 for (const [id, direction] of [['skin-prev', -1], ['skin-next', 1]]) {
   $(id).addEventListener('click', () => {
-    selectSkin(game, (game.selectedSkin + colors.length + direction) % colors.length);
+    if (!selectSkin(game, game.selectedSkin + direction)) return;
     skinFeedback = '';
     save(); syncUI(); playAudioEvent('menu-click');
     if (melodicAudio && isSkinRevealed(game, game.selectedSkin)) preloadVoiceSet(SKINS[game.selectedSkin].voice);
@@ -691,23 +755,38 @@ for (const [id, direction] of [['skin-prev', -1], ['skin-next', 1]]) {
       preloadCharacterAudio(game.selectedSkin);
   });
 }
-$('skin-preview').addEventListener('click', async () => {
-  const index = game.selectedSkin;
-  await unlockAudio();
-  if (melodicAudio) await preloadVoiceSet(SKINS[index].voice);
-  if (index === 12 || (melodicAudio && index === 13)) await preloadCharacterAudio(index);
-  if (game.selectedSkin === index && isSkinRevealed(game, index))
-    playAudioEvent('turn', { skinIndex: index, toneBand: 1, dir: 1, toneId: 'turn-middle-right' });
-});
 $('skin-buy').addEventListener('click', () => {
-  if (buySkin(game)) {
-    skinFeedback = `${skinNames[game.selectedSkin]} 已解锁，下一局可使用`;
-    if (melodicAudio) preloadVoiceSet(SKINS[game.selectedSkin].voice);
-    if (game.selectedSkin === 12 || (melodicAudio && game.selectedSkin === 13)) preloadCharacterAudio(game.selectedSkin);
-    consumeEvents(); save(); syncUI();
+  const index = game.selectedSkin;
+  if (!isSkinRevealed(game, index) || game.unlocked.includes(index) || game.totalPoints < skinCost(index)) return;
+  pendingPurchase = index;
+  $('purchase-detail').textContent = `确定花费 ${skinCost(index)} 点购买 ${SKINS[index].name} 吗？`;
+  syncUI();
+  $('purchase-cancel').focus();
+});
+$('purchase-cancel').addEventListener('click', () => {
+  pendingPurchase = null;
+  syncUI();
+  $('skin-buy').focus();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && pendingPurchase !== null) {
+    event.preventDefault();
+    pendingPurchase = null;
+    syncUI();
+    $('skin-buy').focus();
+  }
+});
+$('purchase-accept').addEventListener('click', () => {
+  const index = pendingPurchase;
+  pendingPurchase = null;
+  if (index !== null && game.selectedSkin === index && buySkin(game)) {
+    skinFeedback = `${SKINS[index].name} 已解锁，来一局？`;
+    if (melodicAudio) preloadVoiceSet(SKINS[index].voice);
+    if (index === 12 || (melodicAudio && index === 13)) preloadCharacterAudio(index);
+    consumeEvents(); save(); syncUI(); $('start').focus();
   } else {
-    skinFeedback = `还差 ${skinCost(game.selectedSkin) - game.totalPoints} 点，继续游玩即可解锁`;
-    playAudioEvent('menu-no'); syncUI();
+    skinFeedback = '购买未完成，请检查可用点数';
+    playAudioEvent('menu-no'); syncUI(); $('skin-buy').focus();
   }
 });
 canvas.addEventListener('pointerdown', event => {
@@ -715,6 +794,12 @@ canvas.addEventListener('pointerdown', event => {
   if (turn(game)) consumeEvents();
 });
 window.addEventListener('keydown', event => {
+  if (event.code === 'F8') {
+    event.preventDefault();
+    if (event.repeat) return;
+    if (game.testLevel) exitTestLevel(); else enterTestLevel();
+    return;
+  }
   if (event.ctrlKey && event.code === 'KeyA') {
     event.preventDefault();
     if (!event.repeat) testShortcutUntil = performance.now() + 1200;
@@ -839,6 +924,41 @@ function background() {
   ctx.fillStyle = '#ad474025'; ctx.fillRect(0, 0, 4, 540); ctx.fillRect(956, 0, 4, 540);
 }
 
+function drawCharge() {
+  if (!game.player || game.invincibleTimer > 0 || chargeRevealAge >= CHARGE_REVEAL_DURATION
+    || !['playing', 'paused'].includes(game.status)) return;
+  const x = sx(game.player.x), y = sy(game.player.y);
+  const radius = px(game.player.size * 1.7);
+  const fade = Math.min(1, (CHARGE_REVEAL_DURATION - chargeRevealAge) / .35);
+  const step = Math.PI * 2 / CHARGE_SEGMENTS;
+  ctx.save(); ctx.lineCap = 'round';
+  for (let i = 0; i < game.charge; i++) {
+    if (chargeOrbs.some(orb => orb.index === i)) continue;
+    const start = -Math.PI / 2 + i * step + .1;
+    const end = start + step - .2;
+    const alpha = (game.charge >= CHARGE_SEGMENTS && !reducedMotion ? .82 + .18 * Math.sin(visualTime * 8) : 1) * fade;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = reducedMotion ? 4.5 : 5.5;
+    ctx.strokeStyle = '#202024';
+    ctx.beginPath(); ctx.arc(x, y, radius, start, end); ctx.stroke();
+    ctx.lineWidth = reducedMotion ? 2.5 : 3.5;
+    ctx.strokeStyle = game.charge >= CHARGE_SEGMENTS ? '#fff0b8' : '#ffd780';
+    ctx.beginPath(); ctx.arc(x, y, radius, start, end); ctx.stroke();
+  }
+  for (const orb of chargeOrbs) {
+    const t = Math.min(1, orb.age / orb.life);
+    const angle = -Math.PI / 2 + (orb.index + .5) * step;
+    const targetX = x + Math.cos(angle) * radius, targetY = y + Math.sin(angle) * radius;
+    const eased = 1 - (1 - t) * (1 - t);
+    ctx.globalAlpha = (1 - .4 * t) * fade;
+    const orbX = sx(orb.x) + (targetX - sx(orb.x)) * eased;
+    const orbY = sy(orb.y) + (targetY - sy(orb.y)) * eased;
+    circle(orbX, orbY, reducedMotion ? 4 : 5.5, '#202024');
+    circle(orbX, orbY, reducedMotion ? 2.5 : 4, '#ffe4a0');
+  }
+  ctx.restore();
+}
+
 function drawBackgroundScore() {
   if (game.status === 'menu') return;
   ctx.save();
@@ -851,7 +971,7 @@ function drawBackgroundScore() {
 }
 
 function drawGoal() {
-  if (!game.goal) return;
+  if (!game.goal || (game.testLevel && !game.point)) return;
   const x = sx(game.goal.x), y = sy(game.goal.y), radius = px(game.goal.size * 2.2);
   if (!drawArt('GoalZone-133.png', x, y, radius * 2.6)) {
     circle(x + 2, y + 3, radius, null, '#00000088', 5);
@@ -1071,7 +1191,7 @@ function drawBonuses() {
       }
       circle(x, y, 3.5, '#333336');
     } else {
-      const glyph = { invincible: '✦', phase: '◎', bullet: '≫' }[bonus.kind] || '?';
+      const glyph = { phase: '◎', bullet: '≫' }[bonus.kind] || '?';
       ctx.fillStyle = '#333336'; ctx.font = '900 24px Arial';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(glyph, x, y + 1);
     }
@@ -1204,7 +1324,7 @@ function render() {
     drawGoal();
     drawBulletTimeWorld(ctx, game, drawEnemies);
     drawBulletTimeMatte(ctx, game, reducedMotion);
-    drawBonuses(); drawTesWhips(); drawPlayer(); drawPoint(); drawVisualEffects(); drawGrazeFlashes();
+    drawBonuses(); drawTesWhips(); drawPlayer(); drawCharge(); drawPoint(); drawVisualEffects(); drawGrazeFlashes();
     if (game.freezeTimer > 0 && game.bulletTimer <= 0) {
       ctx.fillStyle = 'rgba(190, 230, 245, 0.045)'; ctx.fillRect(0, 0, 960, 540);
     }

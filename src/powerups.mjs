@@ -1,15 +1,14 @@
 const EXISTING_BONUSES = Object.freeze(['points', 'freeze', 'bomb']);
 const NEW_BONUSES = Object.freeze([
-  { kind: 'invincible', score: 10, wave: 6 },
-  { kind: 'phase', score: 18, wave: 10 },
-  { kind: 'bullet', score: 26, wave: 14 }
+  { kind: 'phase', score: 7, wave: 5 },
+  { kind: 'bullet', score: 16, wave: 9 }
 ]);
 const EFFECT_DURATION = 5;
 
 export function chooseBonusKind(game, random) {
   game.bonusIntroduced ??= [];
   const available = NEW_BONUSES.filter(bonus => game.classicSpawns
-    ? game.score >= { invincible: 4, phase: 8, bullet: 12 }[bonus.kind]
+    ? game.score >= { phase: 8, bullet: 12 }[bonus.kind]
     : game.score >= bonus.score && game.wave >= bonus.wave);
   const debut = available.find(bonus => !game.bonusIntroduced.includes(bonus.kind));
   if (debut) {
@@ -40,7 +39,7 @@ export function stepPowerups(game, dt) {
 }
 
 export function playerSpeedMultiplier(game) {
-  return game.bulletTimer > 0 ? 1.5 : 1;
+  return game.bulletTimer > 0 ? 1.25 : 1;
 }
 
 export function enemySpeedMultiplier(game) {
